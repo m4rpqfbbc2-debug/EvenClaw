@@ -90,21 +90,13 @@ enum ToolDeclarations {
 
   static let delegateTask: [String: Any] = [
     "name": "delegate_task",
-    "description": "Delegate a complex or long-running task to the personal AI assistant. Use this for tasks that require multiple steps, accessing external services, or actions that take more than a few seconds. Examples: research topics, draft documents, schedule things, control smart home devices.",
+    "description": "Execute any task that requires taking action, storing data, or interacting with external services. You have no memory or storage -- this tool is your only way to do anything beyond conversation. Use for: adding to lists, setting reminders, creating notes, research, drafts, scheduling, smart home control, app interactions, or any request that has a real-world effect. When in doubt, use this tool.",
     "parameters": [
       "type": "object",
       "properties": [
         "task": [
           "type": "string",
-          "description": "Detailed description of the task to perform"
-        ],
-        "deliver": [
-          "type": "boolean",
-          "description": "Whether to send the result to a chat channel when done"
-        ],
-        "channel": [
-          "type": "string",
-          "description": "Chat channel to deliver result to (e.g. whatsapp, telegram, last)"
+          "description": "Clear description of what to do, including all relevant details from the conversation"
         ]
       ],
       "required": ["task"]
