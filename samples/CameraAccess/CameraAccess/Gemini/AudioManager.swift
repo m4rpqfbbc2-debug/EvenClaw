@@ -46,10 +46,17 @@ class AudioManager {
     let inputNode = audioEngine.inputNode
     let inputNativeFormat = inputNode.outputFormat(forBus: 0)
 
+    NSLog("[Audio] Native input format: %@ sampleRate=%.0f channels=%d",
+          inputNativeFormat.commonFormat == .pcmFormatFloat32 ? "Float32" :
+          inputNativeFormat.commonFormat == .pcmFormatInt16 ? "Int16" : "Other",
+          inputNativeFormat.sampleRate, inputNativeFormat.channelCount)
+
     // Always tap in native format (Float32) and convert to Int16 PCM manually.
     // AVAudioEngine taps don't reliably convert between sample formats inline.
     let needsResample = inputNativeFormat.sampleRate != GeminiConfig.inputAudioSampleRate
         || inputNativeFormat.channelCount != GeminiConfig.audioChannels
+
+    NSLog("[Audio] Needs resample: %@", needsResample ? "YES" : "NO")
 
     var converter: AVAudioConverter?
     if needsResample {
@@ -62,8 +69,11 @@ class AudioManager {
       converter = AVAudioConverter(from: inputNativeFormat, to: resampleFormat)
     }
 
+    var tapCount = 0
     inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputNativeFormat) { [weak self] buffer, _ in
       guard let self else { return }
+
+      tapCount += 1
 
       if let converter {
         let resampleFormat = AVAudioFormat(
@@ -73,12 +83,23 @@ class AudioManager {
           interleaved: false
         )!
         guard let resampled = self.convertBuffer(buffer, using: converter, targetFormat: resampleFormat) else {
+          if tapCount <= 5 { NSLog("[Audio] Resample failed for tap #%d", tapCount) }
           return
         }
         let data = self.float32BufferToInt16Data(resampled)
+        if tapCount <= 5 {
+          let rms = self.computeRMS(resampled)
+          NSLog("[Audio] Tap #%d: resampled frames=%d dataBytes=%d rms=%.6f",
+                tapCount, resampled.frameLength, data.count, rms)
+        }
         self.onAudioCaptured?(data)
       } else {
         let data = self.float32BufferToInt16Data(buffer)
+        if tapCount <= 5 {
+          let rms = self.computeRMS(buffer)
+          NSLog("[Audio] Tap #%d: frames=%d dataBytes=%d rms=%.6f",
+                tapCount, buffer.frameLength, data.count, rms)
+        }
         self.onAudioCaptured?(data)
       }
     }
@@ -133,6 +154,17 @@ class AudioManager {
   }
 
   // MARK: - Private helpers
+
+  private func computeRMS(_ buffer: AVAudioPCMBuffer) -> Float {
+    let frameCount = Int(buffer.frameLength)
+    guard frameCount > 0, let floatData = buffer.floatChannelData else { return 0 }
+    var sumSquares: Float = 0
+    for i in 0..<frameCount {
+      let s = floatData[0][i]
+      sumSquares += s * s
+    }
+    return sqrt(sumSquares / Float(frameCount))
+  }
 
   private func float32BufferToInt16Data(_ buffer: AVAudioPCMBuffer) -> Data {
     let frameCount = Int(buffer.frameLength)
