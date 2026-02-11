@@ -13,6 +13,7 @@
 // Initiates streaming
 //
 
+import MWDATCamera
 import MWDATCore
 import SwiftUI
 
@@ -78,6 +79,26 @@ struct NonStreamView: View {
         }
         .padding(.bottom, 12)
         .opacity(viewModel.hasActiveDevice ? 0 : 1)
+
+        // Resolution picker (glasses mode only)
+        VStack(spacing: 4) {
+          Text("Resolution")
+            .font(.system(size: 13))
+            .foregroundColor(.white.opacity(0.6))
+          Picker("Resolution", selection: Binding(
+            get: { viewModel.selectedResolution },
+            set: { viewModel.updateResolution($0) }
+          )) {
+            Text("Low").tag(StreamingResolution.low)
+            Text("Med").tag(StreamingResolution.medium)
+            Text("High").tag(StreamingResolution.high)
+          }
+          .pickerStyle(.segmented)
+          Text(viewModel.resolutionLabel)
+            .font(.system(size: 12, design: .monospaced))
+            .foregroundColor(.white.opacity(0.4))
+        }
+        .padding(.bottom, 12)
 
         CustomButton(
           title: "Start on iPhone",

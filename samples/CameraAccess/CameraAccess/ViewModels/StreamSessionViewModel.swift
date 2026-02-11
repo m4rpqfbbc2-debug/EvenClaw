@@ -38,9 +38,19 @@ class StreamSessionViewModel: ObservableObject {
   @Published var errorMessage: String = ""
   @Published var hasActiveDevice: Bool = false
   @Published var streamingMode: StreamingMode = .glasses
+  @Published var selectedResolution: StreamingResolution = .low
 
   var isStreaming: Bool {
     streamingStatus != .stopped
+  }
+
+  var resolutionLabel: String {
+    switch selectedResolution {
+    case .low: return "360x640"
+    case .medium: return "504x896"
+    case .high: return "720x1280"
+    @unknown default: return "Unknown"
+    }
   }
 
   // Photo capture properties
@@ -82,8 +92,25 @@ class StreamSessionViewModel: ObservableObject {
       }
     }
 
+    attachListeners()
+  }
+
+  /// Recreate the StreamSession with the current selectedResolution.
+  /// Only call when not actively streaming.
+  func updateResolution(_ resolution: StreamingResolution) {
+    guard !isStreaming else { return }
+    selectedResolution = resolution
+    let config = StreamSessionConfig(
+      videoCodec: VideoCodec.raw,
+      resolution: resolution,
+      frameRate: 24)
+    streamSession = StreamSession(streamSessionConfig: config, deviceSelector: deviceSelector)
+    attachListeners()
+    NSLog("[Stream] Resolution changed to %@", resolutionLabel)
+  }
+
+  private func attachListeners() {
     // Subscribe to session state changes using the DAT SDK listener pattern
-    // State changes tell us when streaming starts, stops, or encounters issues
     stateListenerToken = streamSession.statePublisher.listen { [weak self] state in
       Task { @MainActor [weak self] in
         self?.updateStatusFromState(state)
@@ -91,7 +118,6 @@ class StreamSessionViewModel: ObservableObject {
     }
 
     // Subscribe to video frames from the device camera
-    // Each VideoFrame contains the raw camera data that we convert to UIImage
     videoFrameListenerToken = streamSession.videoFramePublisher.listen { [weak self] videoFrame in
       Task { @MainActor [weak self] in
         guard let self else { return }
@@ -110,7 +136,6 @@ class StreamSessionViewModel: ObservableObject {
     }
 
     // Subscribe to streaming errors
-    // Errors include device disconnection, streaming failures, etc.
     errorListenerToken = streamSession.errorPublisher.listen { [weak self] error in
       Task { @MainActor [weak self] in
         guard let self else { return }
@@ -124,7 +149,6 @@ class StreamSessionViewModel: ObservableObject {
     updateStatusFromState(streamSession.state)
 
     // Subscribe to photo capture events
-    // PhotoData contains the captured image in the requested format (JPEG/HEIC)
     photoDataListenerToken = streamSession.photoDataPublisher.listen { [weak self] photoData in
       Task { @MainActor [weak self] in
         guard let self else { return }
