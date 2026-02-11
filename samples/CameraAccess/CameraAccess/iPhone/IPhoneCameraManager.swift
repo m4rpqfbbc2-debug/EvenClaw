@@ -54,12 +54,8 @@ class IPhoneCameraManager: NSObject {
       captureSession.addOutput(videoOutput)
     }
 
-    // Fix orientation to portrait
-    if let connection = videoOutput.connection(with: .video) {
-      if connection.isVideoRotationAngleSupported(90) {
-        connection.videoRotationAngle = 90
-      }
-    }
+    // No hardware rotation — keep raw landscape pixels for WebRTC.
+    // UIImage orientation metadata handles portrait display in SwiftUI.
 
     captureSession.commitConfiguration()
     NSLog("[iPhoneCamera] Session configured")
@@ -90,7 +86,7 @@ extension IPhoneCameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
 
     let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
     guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return }
-    let image = UIImage(cgImage: cgImage)
+    let image = UIImage(cgImage: cgImage, scale: 1.0, orientation: .right)
 
     onFrameCaptured?(image)
   }
