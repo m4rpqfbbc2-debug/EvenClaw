@@ -11,7 +11,7 @@
 //
 // Main UI for video streaming from Meta wearable devices using the DAT SDK.
 // This view demonstrates the complete streaming API: video streaming with real-time display, photo capture,
-// and error handling. Extended with Gemini Live AI assistant integration.
+// and error handling. Extended with Gemini Live AI assistant and WebRTC live streaming integration.
 //
 
 import MWDATCore
@@ -21,6 +21,7 @@ struct StreamView: View {
   @ObservedObject var viewModel: StreamSessionViewModel
   @ObservedObject var wearablesVM: WearablesViewModel
   @ObservedObject var geminiVM: GeminiSessionViewModel
+  @ObservedObject var webrtcVM: WebRTCSessionViewModel
 
   var body: some View {
     ZStack {
@@ -78,10 +79,19 @@ struct StreamView: View {
         .padding(.all, 24)
       }
 
+      // WebRTC status overlay (top)
+      if webrtcVM.isActive {
+        VStack {
+          WebRTCStatusBar(webrtcVM: webrtcVM)
+          Spacer()
+        }
+        .padding(.all, 24)
+      }
+
       // Bottom controls layer
       VStack {
         Spacer()
-        ControlsView(viewModel: viewModel, geminiVM: geminiVM)
+        ControlsView(viewModel: viewModel, geminiVM: geminiVM, webrtcVM: webrtcVM)
       }
       .padding(.all, 24)
     }
@@ -92,6 +102,9 @@ struct StreamView: View {
         }
         if geminiVM.isGeminiActive {
           geminiVM.stopSession()
+        }
+        if webrtcVM.isActive {
+          webrtcVM.stopSession()
         }
       }
     }
@@ -115,6 +128,15 @@ struct StreamView: View {
     } message: {
       Text(geminiVM.errorMessage ?? "")
     }
+    // WebRTC error alert
+    .alert("Live Stream", isPresented: Binding(
+      get: { webrtcVM.errorMessage != nil },
+      set: { if !$0 { webrtcVM.errorMessage = nil } }
+    )) {
+      Button("OK") { webrtcVM.errorMessage = nil }
+    } message: {
+      Text(webrtcVM.errorMessage ?? "")
+    }
   }
 }
 
@@ -122,6 +144,7 @@ struct StreamView: View {
 struct ControlsView: View {
   @ObservedObject var viewModel: StreamSessionViewModel
   @ObservedObject var geminiVM: GeminiSessionViewModel
+  @ObservedObject var webrtcVM: WebRTCSessionViewModel
 
   var body: some View {
     // Controls row
@@ -136,14 +159,14 @@ struct ControlsView: View {
         }
       }
 
-      // Photo button (glasses mode only — DAT SDK capture)
+      // Photo button (glasses mode only -- DAT SDK capture)
       if viewModel.streamingMode == .glasses {
         CircleButton(icon: "camera.fill", text: nil) {
           viewModel.capturePhoto()
         }
       }
 
-      // Gemini AI button
+      // Gemini AI button (disabled when WebRTC is active — audio conflict)
       CircleButton(
         icon: geminiVM.isGeminiActive ? "waveform.circle.fill" : "waveform.circle",
         text: "AI"
@@ -156,6 +179,26 @@ struct ControlsView: View {
           }
         }
       }
+      .opacity(webrtcVM.isActive ? 0.4 : 1.0)
+      .disabled(webrtcVM.isActive)
+
+      // WebRTC Live Stream button (disabled when Gemini is active — audio conflict)
+      CircleButton(
+        icon: webrtcVM.isActive
+          ? "antenna.radiowaves.left.and.right.circle.fill"
+          : "antenna.radiowaves.left.and.right.circle",
+        text: "Live"
+      ) {
+        Task {
+          if webrtcVM.isActive {
+            webrtcVM.stopSession()
+          } else {
+            await webrtcVM.startSession()
+          }
+        }
+      }
+      .opacity(geminiVM.isGeminiActive ? 0.4 : 1.0)
+      .disabled(geminiVM.isGeminiActive)
     }
   }
 }

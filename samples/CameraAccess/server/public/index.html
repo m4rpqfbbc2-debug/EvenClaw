@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VisionClaw - Remote Expert View</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000; color: #fff; font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+    }
+    #video-container {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      position: relative; background: #111;
+    }
+    video {
+      max-width: 100%; max-height: 100%; object-fit: contain;
+    }
+    #controls {
+      padding: 16px; display: flex; gap: 12px;
+      align-items: center; justify-content: center;
+      background: #111; border-top: 1px solid #222;
+    }
+    input {
+      padding: 12px 16px; font-size: 20px; border-radius: 8px;
+      border: 1px solid #333; background: #222; color: #fff;
+      text-transform: uppercase; letter-spacing: 6px; width: 180px;
+      text-align: center; font-family: 'SF Mono', 'Menlo', monospace;
+    }
+    input::placeholder {
+      letter-spacing: 2px; font-size: 14px; color: #555;
+    }
+    button {
+      padding: 12px 24px; font-size: 15px; border-radius: 8px;
+      border: none; cursor: pointer; font-weight: 600;
+      transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.85; }
+    button:active { opacity: 0.7; }
+    #join-btn { background: #0a84ff; color: #fff; }
+    #disconnect-btn { background: #ff3b30; color: #fff; display: none; }
+    #mic-btn { background: #333; color: #fff; display: none; }
+    #mic-btn.muted { background: #ff3b30; }
+    #status {
+      position: absolute; top: 16px; left: 16px;
+      padding: 6px 14px; border-radius: 16px; font-size: 13px;
+      font-weight: 500;
+    }
+    .status-waiting { background: rgba(255,204,0,0.2); color: #ffcc00; }
+    .status-connected { background: rgba(48,209,88,0.2); color: #30d158; }
+    .status-disconnected { background: rgba(255,59,48,0.2); color: #ff3b30; }
+    .status-idle { background: rgba(255,255,255,0.1); color: #888; }
+    #join-panel {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      text-align: center;
+    }
+    #join-panel h1 {
+      font-size: 28px; font-weight: 600; margin-bottom: 8px;
+    }
+    #join-panel p {
+      color: #888; margin-bottom: 24px; font-size: 15px;
+    }
+    .join-row {
+      display: flex; gap: 12px; justify-content: center;
+    }
+    #waiting-msg {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      text-align: center; display: none;
+    }
+    #waiting-msg p { color: #888; font-size: 16px; }
+  </style>
+</head>
+<body>
+  <div id="video-container">
+    <video id="remote-video" autoplay playsinline></video>
+    <div id="status" class="status-idle">Not Connected</div>
+
+    <div id="join-panel">
+      <h1>VisionClaw</h1>
+      <p>Enter the room code shown on the glasses app</p>
+      <div class="join-row">
+        <input id="room-input" maxlength="6" placeholder="CODE" autofocus>
+        <button id="join-btn" onclick="joinRoom()">Join</button>
+      </div>
+    </div>
+
+    <div id="waiting-msg">
+      <p>Connected to room. Waiting for stream...</p>
+    </div>
+  </div>
+  <div id="controls">
+    <button id="mic-btn" onclick="toggleMic()">Mic: ON</button>
+    <button id="disconnect-btn" onclick="disconnectSession()">Disconnect</button>
+  </div>
+
+  <script>
+    let ws, pc, localStream;
+    const wsUrl = `ws://${location.hostname}:${location.port || 8080}`;
+
+    function joinRoom() {
+      const code = document.getElementById('room-input').value.toUpperCase().trim();
+      if (code.length !== 6) return;
+
+      ws = new WebSocket(wsUrl);
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: 'join', room: code }));
+        setStatus('Joining...', 'waiting');
+      };
+      ws.onmessage = (e) => handleSignaling(JSON.parse(e.data));
+      ws.onclose = () => {
+        setStatus('Disconnected', 'disconnected');
+        showControls(false);
+      };
+      ws.onerror = () => {
+        setStatus('Connection error', 'disconnected');
+      };
+    }
+
+    async function handleSignaling(msg) {
+      switch (msg.type) {
+        case 'room_joined':
+          setStatus('Waiting for stream...', 'waiting');
+          document.getElementById('join-panel').style.display = 'none';
+          document.getElementById('waiting-msg').style.display = 'block';
+          break;
+
+        case 'offer':
+          document.getElementById('waiting-msg').style.display = 'none';
+          await setupPeerConnection();
+          await pc.setRemoteDescription({ type: 'offer', sdp: msg.sdp });
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          ws.send(JSON.stringify({ type: 'answer', sdp: answer.sdp }));
+          break;
+
+        case 'candidate':
+          if (pc && pc.remoteDescription) {
+            await pc.addIceCandidate({
+              candidate: msg.candidate,
+              sdpMid: msg.sdpMid,
+              sdpMLineIndex: msg.sdpMLineIndex
+            });
+          }
+          break;
+
+        case 'peer_left':
+          setStatus('Stream ended', 'disconnected');
+          showControls(false);
+          break;
+
+        case 'error':
+          setStatus(msg.message, 'disconnected');
+          document.getElementById('join-panel').style.display = 'block';
+          break;
+      }
+    }
+
+    async function setupPeerConnection() {
+      const config = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      };
+      pc = new RTCPeerConnection(config);
+
+      // Get mic for bidirectional audio (expert talks back to glasses wearer)
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+      } catch (e) {
+        console.log('No mic access, audio will be one-way only');
+      }
+
+      pc.ontrack = (e) => {
+        const video = document.getElementById('remote-video');
+        if (e.streams && e.streams[0]) {
+          video.srcObject = e.streams[0];
+        }
+      };
+
+      pc.onicecandidate = (e) => {
+        if (e.candidate) {
+          ws.send(JSON.stringify({
+            type: 'candidate',
+            candidate: e.candidate.candidate,
+            sdpMid: e.candidate.sdpMid,
+            sdpMLineIndex: e.candidate.sdpMLineIndex
+          }));
+        }
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        switch (pc.iceConnectionState) {
+          case 'connected':
+          case 'completed':
+            setStatus('Live', 'connected');
+            showControls(true);
+            break;
+          case 'disconnected':
+            setStatus('Reconnecting...', 'waiting');
+            break;
+          case 'failed':
+            setStatus('Connection failed', 'disconnected');
+            break;
+          case 'closed':
+            setStatus('Disconnected', 'disconnected');
+            showControls(false);
+            break;
+        }
+      };
+    }
+
+    function toggleMic() {
+      if (!localStream) return;
+      const track = localStream.getAudioTracks()[0];
+      if (!track) return;
+      track.enabled = !track.enabled;
+      const btn = document.getElementById('mic-btn');
+      btn.textContent = track.enabled ? 'Mic: ON' : 'Mic: OFF';
+      btn.classList.toggle('muted', !track.enabled);
+    }
+
+    function disconnectSession() {
+      if (pc) { pc.close(); pc = null; }
+      if (ws) { ws.close(); ws = null; }
+      if (localStream) {
+        localStream.getTracks().forEach(t => t.stop());
+        localStream = null;
+      }
+      document.getElementById('remote-video').srcObject = null;
+      setStatus('Disconnected', 'disconnected');
+      showControls(false);
+      document.getElementById('join-panel').style.display = 'block';
+      document.getElementById('room-input').value = '';
+    }
+
+    function showControls(visible) {
+      document.getElementById('mic-btn').style.display = visible ? 'inline-block' : 'none';
+      document.getElementById('disconnect-btn').style.display = visible ? 'inline-block' : 'none';
+    }
+
+    function setStatus(text, cls) {
+      const el = document.getElementById('status');
+      el.textContent = text;
+      el.className = 'status-' + cls;
+    }
+
+    // Allow Enter key to join
+    document.getElementById('room-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') joinRoom();
+    });
+  </script>
+</body>
+</html>
