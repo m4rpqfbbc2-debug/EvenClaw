@@ -109,6 +109,11 @@ class StreamSessionViewModel: ObservableObject {
     errorListenerToken = streamSession.errorPublisher.listen { [weak self] error in
       Task { @MainActor [weak self] in
         guard let self else { return }
+        // Suppress device-not-found errors when user hasn't started streaming yet
+        if self.streamingStatus == .stopped {
+          if case .deviceNotConnected = error { return }
+          if case .deviceNotFound = error { return }
+        }
         let newErrorMessage = formatStreamingError(error)
         if newErrorMessage != self.errorMessage {
           showError(newErrorMessage)
