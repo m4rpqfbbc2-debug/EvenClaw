@@ -23,14 +23,6 @@ class GeminiLiveService: ObservableObject {
   var onToolCall: ((GeminiToolCall) -> Void)?
   var onToolCallCancellation: ((GeminiToolCallCancellation) -> Void)?
 
-  /// Dynamic system prompt injected by VerticalConfiguration.
-  /// Set before calling connect(). Falls back to GeminiConfig.systemInstruction if nil.
-  var dynamicSystemPrompt: String?
-
-  /// Dynamic tool declarations injected by VerticalConfiguration.
-  /// Set before calling connect(). Falls back to ToolDeclarations.allDeclarations() if nil.
-  var dynamicToolDeclarations: [[String: Any]]?
-
   // Latency tracking
   private var lastUserSpeechEnd: Date?
   private var responseLatencyLogged = false
@@ -172,9 +164,6 @@ class GeminiLiveService: ObservableObject {
   }
 
   private func sendSetupMessage() {
-    let prompt = dynamicSystemPrompt ?? GeminiConfig.systemInstruction
-    let tools = dynamicToolDeclarations ?? ToolDeclarations.allDeclarations()
-
     let setup: [String: Any] = [
       "setup": [
         "model": GeminiConfig.model,
@@ -186,12 +175,12 @@ class GeminiLiveService: ObservableObject {
         ],
         "systemInstruction": [
           "parts": [
-            ["text": prompt]
+            ["text": GeminiConfig.systemInstruction]
           ]
         ],
         "tools": [
           [
-            "functionDeclarations": tools
+            "functionDeclarations": ToolDeclarations.allDeclarations()
           ]
         ],
         "realtimeInputConfig": [

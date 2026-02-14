@@ -3,18 +3,14 @@ import Foundation
 @MainActor
 class ToolCallRouter {
   private let bridge: OpenClawBridge
-  private let verticalConfig: VerticalConfiguration?
-  private let sessionManager: SessionManager?
   private var inFlightTasks: [String: Task<Void, Never>] = [:]
 
-  init(bridge: OpenClawBridge, config: VerticalConfiguration? = nil, sessionManager: SessionManager? = nil) {
+  init(bridge: OpenClawBridge) {
     self.bridge = bridge
-    self.verticalConfig = config
-    self.sessionManager = sessionManager
   }
 
-  /// Route a tool call from Gemini. Tries local vertical handler first,
-  /// falls back to OpenClaw if local handler returns nil.
+  /// Route a tool call from Gemini to OpenClaw. Calls sendResponse with the
+  /// JSON dictionary to send back as a toolResponse message.
   func handleToolCall(
     _ call: GeminiFunctionCall,
     sendResponse: @escaping ([String: Any]) -> Void
@@ -26,20 +22,8 @@ class ToolCallRouter {
           callName, callId, String(describing: call.args))
 
     let task = Task { @MainActor in
-      var result: ToolResult
-
-      // Try local vertical handler first
-      if let config = verticalConfig,
-         let manager = sessionManager,
-         let localResult = await config.handleToolCall(call, sessionManager: manager) {
-        NSLog("[ToolCall] Handled locally by vertical '%@': %@ (id: %@)",
-              config.id, callName, callId)
-        result = localResult
-      } else {
-        // Fall through to OpenClaw
-        let taskDesc = call.args["task"] as? String ?? String(describing: call.args)
-        result = await bridge.delegateTask(task: taskDesc, toolName: callName)
-      }
+      let taskDesc = call.args["task"] as? String ?? String(describing: call.args)
+      let result = await bridge.delegateTask(task: taskDesc, toolName: callName)
 
       guard !Task.isCancelled else {
         NSLog("[ToolCall] Task %@ was cancelled, skipping response", callId)
