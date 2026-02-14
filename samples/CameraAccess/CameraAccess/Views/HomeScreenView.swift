@@ -18,12 +18,26 @@ import SwiftUI
 
 struct HomeScreenView: View {
   @ObservedObject var viewModel: WearablesViewModel
+  @State private var showSettings = false
 
   var body: some View {
     ZStack {
       Color.white.edgesIgnoringSafeArea(.all)
 
       VStack(spacing: 12) {
+        HStack {
+          Spacer()
+          Button {
+            showSettings = true
+          } label: {
+            Image(systemName: "gearshape")
+              .resizable()
+              .aspectRatio(contentMode: .fit)
+              .foregroundColor(.black)
+              .frame(width: 24, height: 24)
+          }
+        }
+
         Spacer()
 
         Image(.cameraAccessIcon)
@@ -69,6 +83,9 @@ struct HomeScreenView: View {
         }
       }
       .padding(.all, 24)
+    }
+    .sheet(isPresented: $showSettings) {
+      SettingsView()
     }
   }
 
