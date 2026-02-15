@@ -44,6 +44,15 @@ struct MainView: View {
                     StatusDot(label: "OpenClaw", isConnected: manager.openClawConnected)
                     StatusDot(label: "Glasses", isConnected: manager.glassesConnected)
                 }
+                
+                // Debug info
+                if !manager.debugStatus.isEmpty {
+                    Text(manager.debugStatus)
+                        .font(.caption2)
+                        .foregroundStyle(.yellow)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                }
 
                 Spacer()
 

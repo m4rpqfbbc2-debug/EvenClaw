@@ -81,20 +81,33 @@ class G2BLEManager: NSObject {
             self.state = .scanning
             
             // First: check for already-connected G2 peripherals (paired via iOS Settings)
-            let connected = self.centralManager.retrieveConnectedPeripherals(withServices: [G2Constants.serviceUUID])
-            for p in connected {
-                if let name = p.name, G2Constants.isG2Device(name: name) {
-                    log.info("Found already-connected G2: \(name)")
-                    self.delegate?.bleManager(self, didDiscoverDevice: name, rssi: NSNumber(value: 0))
-                    if G2Constants.isLeftEar(name: name) || self.peripheral == nil {
-                        self.peripheral = p
-                        p.delegate = self
-                        self.state = .connecting
-                        // Already connected at system level — discover services directly
-                        p.discoverServices([G2Constants.serviceUUID])
-                        return
+            // Try multiple service UUIDs — iOS may not know about the custom G2 service
+            // until after explicit service discovery
+            let commonBLEServices: [CBUUID] = [
+                G2Constants.serviceUUID,                    // Custom G2 service
+                CBUUID(string: "180A"),                     // Device Information
+                CBUUID(string: "180F"),                     // Battery Service
+                CBUUID(string: "1800"),                     // Generic Access
+                CBUUID(string: "1801"),                     // Generic Attribute
+            ]
+            var foundConnected = false
+            for svcUUID in commonBLEServices {
+                let connected = self.centralManager.retrieveConnectedPeripherals(withServices: [svcUUID])
+                for p in connected {
+                    if let name = p.name, G2Constants.isG2Device(name: name) {
+                        log.info("Found already-connected G2 via service \(svcUUID): \(name)")
+                        self.delegate?.bleManager(self, didDiscoverDevice: name, rssi: NSNumber(value: 0))
+                        if G2Constants.isLeftEar(name: name) || self.peripheral == nil {
+                            self.peripheral = p
+                            p.delegate = self
+                            self.state = .connecting
+                            // Discover ALL services — not just our custom one
+                            p.discoverServices(nil)
+                            foundConnected = true
+                        }
                     }
                 }
+                if foundConnected { return }
             }
             
             // Fallback: scan for advertising G2 devices
@@ -225,7 +238,7 @@ extension G2BLEManager: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         log.info("Connected to \(peripheral.name ?? "unknown")")
-        peripheral.discoverServices([G2Constants.serviceUUID])
+        peripheral.discoverServices(nil) // Discover ALL services
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {

@@ -60,6 +60,7 @@ class VoiceCommandManager: ObservableObject {
     @Published var openClawConnected = false
     @Published var glassesConnected = false
     @Published var liveTranscriptionText = ""
+    @Published var debugStatus = ""
     @Published var currentTranscriptionSource: TranscriptionSource = .g2Conversate
 
     // MARK: - Dependencies
@@ -111,18 +112,29 @@ class VoiceCommandManager: ObservableObject {
         // Request notification permission
         await notificationBridge.requestPermission()
 
+        // Check OpenClaw first
+        debugStatus = "→ \(openClawBridge.baseURL)/v1/..."
+        await openClawBridge.checkConnection()
+        openClawConnected = openClawBridge.connectionState == .connected
+        if openClawConnected {
+            debugStatus = "OpenClaw ✅ connected"
+        } else if case .unreachable(let msg) = openClawBridge.connectionState {
+            debugStatus = "OpenClaw ❌ \(msg)"
+        } else {
+            debugStatus = "OpenClaw ❌ not configured"
+        }
+        connectionStatus = openClawConnected ? .ready : .error("OpenClaw unreachable")
+
         // Connect glasses
+        debugStatus += "\nScanning for G2..."
         do {
             try await glassesProvider.connect()
             glassesConnected = glassesProvider.connectionState == .connected
+            debugStatus += "\nGlasses ✅ connected"
         } catch {
             NSLog("[VCM] Glasses connection failed: %@", error.localizedDescription)
+            debugStatus += "\nGlasses ❌ \(error.localizedDescription)"
         }
-
-        // Check OpenClaw
-        await openClawBridge.checkConnection()
-        openClawConnected = openClawBridge.connectionState == .connected
-        connectionStatus = openClawConnected ? .ready : .error("OpenClaw unreachable")
 
         // Setup audio session for fallback phone mic
         do {
