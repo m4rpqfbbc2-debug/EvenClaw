@@ -16,6 +16,7 @@ protocol G2BLEManagerDelegate: AnyObject {
     func bleManager(_ manager: G2BLEManager, didChangeState state: G2BLEManager.State)
     func bleManager(_ manager: G2BLEManager, didReceiveData data: Data)
     func bleManager(_ manager: G2BLEManager, didDiscoverDevice name: String, rssi: NSNumber)
+    func bleManager(_ manager: G2BLEManager, didReceiveVoiceTranscript text: String, isFinal: Bool)
 }
 
 class G2BLEManager: NSObject {
@@ -284,6 +285,125 @@ extension G2BLEManager: CBPeripheralDelegate {
         } else {
             log.info("Notifications enabled for \(characteristic.uuid)")
         }
+    }
+}
+
+// MARK: - Protobuf Parser
+
+/// Simple protobuf parser for ConversateMessage without needing full protobuf library
+struct ConversateParser {
+    
+    static func parseConversateMessage(_ data: Data) -> (text: String, isFinal: Bool)? {
+        var offset = 0
+        
+        // Look for field 7 (ConversateTranscript) - tag 0x3A (7 << 3 | 2)
+        while offset < data.count {
+            guard offset + 1 < data.count else { break }
+            
+            let tag = data[offset]
+            offset += 1
+            
+            if tag == 0x3A { // Field 7, wire type 2 (length-delimited)
+                // Read length varint
+                guard let (length, lengthBytes) = readVarint(data, offset: offset) else { return nil }
+                offset += lengthBytes
+                
+                guard offset + Int(length) <= data.count else { return nil }
+                
+                // Parse ConversateTranscript fields within this length
+                let transcriptData = data.subdata(in: offset..<(offset + Int(length)))
+                return parseConversateTranscript(transcriptData)
+            } else {
+                // Skip unknown field - need to handle different wire types
+                offset = skipField(data, offset: offset - 1) ?? data.count
+            }
+        }
+        
+        return nil
+    }
+    
+    private static func parseConversateTranscript(_ data: Data) -> (text: String, isFinal: Bool)? {
+        var offset = 0
+        var text = ""
+        var isFinal = false
+        
+        while offset < data.count {
+            guard offset < data.count else { break }
+            
+            let tag = data[offset]
+            offset += 1
+            
+            switch tag {
+            case 0x0A: // Field 1 (text), wire type 2 (string)
+                guard let (length, lengthBytes) = readVarint(data, offset: offset) else { continue }
+                offset += lengthBytes
+                
+                guard offset + Int(length) <= data.count else { continue }
+                
+                if let textValue = String(data: data.subdata(in: offset..<(offset + Int(length))), encoding: .utf8) {
+                    text = textValue
+                }
+                offset += Int(length)
+                
+            case 0x10: // Field 2 (is_final), wire type 0 (varint/bool)
+                guard let (value, valueBytes) = readVarint(data, offset: offset) else { continue }
+                isFinal = value != 0
+                offset += valueBytes
+                
+            default:
+                // Skip unknown field
+                offset = skipField(data, offset: offset - 1) ?? data.count
+            }
+        }
+        
+        return (text: text, isFinal: isFinal)
+    }
+    
+    private static func readVarint(_ data: Data, offset: Int) -> (UInt64, Int)? {
+        var result: UInt64 = 0
+        var shift = 0
+        var bytesRead = 0
+        
+        for i in offset..<data.count {
+            let byte = data[i]
+            bytesRead += 1
+            
+            result |= UInt64(byte & 0x7F) << shift
+            
+            if (byte & 0x80) == 0 { // MSB is 0, end of varint
+                return (result, bytesRead)
+            }
+            
+            shift += 7
+            if shift >= 64 { return nil } // Overflow protection
+        }
+        
+        return nil // Incomplete varint
+    }
+    
+    private static func skipField(_ data: Data, offset: Int) -> Int? {
+        guard offset < data.count else { return nil }
+        
+        let tag = data[offset]
+        let wireType = tag & 0x07
+        var newOffset = offset + 1
+        
+        switch wireType {
+        case 0: // Varint
+            guard let (_, bytes) = readVarint(data, offset: newOffset) else { return nil }
+            newOffset += bytes
+        case 1: // 64-bit
+            newOffset += 8
+        case 2: // Length-delimited
+            guard let (length, bytes) = readVarint(data, offset: newOffset) else { return nil }
+            newOffset += bytes + Int(length)
+        case 5: // 32-bit
+            newOffset += 4
+        default:
+            return nil // Unknown wire type
+        }
+        
+        return newOffset
     }
 }
 

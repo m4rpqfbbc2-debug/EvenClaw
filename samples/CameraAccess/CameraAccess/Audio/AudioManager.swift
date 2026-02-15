@@ -69,6 +69,7 @@ class AudioManager: ObservableObject {
 
             let pcmData: Data
             let rms: Float
+            var recognitionBuffer: AVAudioPCMBuffer?
 
             if let converter {
                 let ratio = targetFormat.sampleRate / nativeFormat.sampleRate
@@ -86,17 +87,19 @@ class AudioManager: ObservableObject {
                 if error != nil { return }
                 pcmData = self.float32ToInt16Data(outBuf)
                 rms = self.computeRMS(outBuf)
+                recognitionBuffer = outBuf
             } else {
                 pcmData = self.float32ToInt16Data(buffer)
                 rms = self.computeRMS(buffer)
+                recognitionBuffer = buffer
             }
 
             DispatchQueue.main.async { self.currentRMS = rms }
             self.onAudioLevel?(rms)
             
-            // Call speech recognition callback if set
-            if let outBuf = (converter != nil) ? outBuf : buffer {
-                self.onAudioBuffer?(outBuf)
+            // Feed audio buffer to speech recognition if active
+            if let buf = recognitionBuffer {
+                self.onAudioBuffer?(buf)
             }
 
             self.captureQueue.async {

@@ -2,31 +2,33 @@
 // Copyright 2026 XGX.ai. All rights reserved.
 //
 // VoiceCommandManager.swift
-// Orchestrates: Wake Word → Live Dictation → Send Confirmation → Processing → Response
+// Orchestrates: G2 Conversate → Send Confirmation → Processing → Response
+//
+// PRIMARY: G2 Conversate BLE hijack (user long-presses left TouchBar)
+// FALLBACK: iPhone mic → Whisper (when glasses not connected)
 //
 // State Machine:
-// idle (wake word listening) 
-//   → "Hey Aisha" detected or mic button pressed
-// listening (live dictation, HUD showing words)
-//   → silence detected  
-// confirming (HUD shows text + "Tap to send")
-//   → tap/timeout = send, double-tap = cancel back to idle
-// processing (HUD shows "Thinking..." animation)
+// idle (waiting for TouchBar long-press or mic button)
+//   → Conversate packets start arriving (or mic button pressed)
+// listening (live dictation on HUD from partial transcripts)
+//   → is_final=true received (or silence on phone mic)
+// confirming (HUD shows final text + "Tap to send")
+//   → tap/timeout = send, double-tap = cancel
+// processing (HUD shows "Thinking..." animation)  
 //   → response received
-// responding (HUD shows AI response, TTS playing)
-//   → auto-clear after 15s or gesture → back to idle
+// responding (HUD shows AI response)
+//   → auto-clear → back to idle
 
 import Foundation
 import Combine
-import Speech
 import AVFoundation
 
 // MARK: - App State
 
 enum VoiceAssistantState: Equatable {
-    case idle              // Wake word listening
-    case listening         // Live dictation active
-    case confirming        // Show transcription + "Tap to send"
+    case idle              // Waiting for TouchBar long-press or mic button
+    case listening         // Live dictation active (G2 partial transcripts or phone mic)
+    case confirming        // Show final text + "Tap to send"
     case processing        // "Thinking..." animation
     case responding        // Show AI response + TTS
     case error(String)     // Error state
@@ -37,6 +39,11 @@ enum AppConnectionStatus: Equatable {
     case checking
     case ready
     case error(String)
+}
+
+enum TranscriptionSource {
+    case g2Conversate      // Primary: G2 BLE Conversate service
+    case phoneMic          // Fallback: iPhone mic → Whisper
 }
 
 @MainActor
@@ -53,6 +60,7 @@ class VoiceCommandManager: ObservableObject {
     @Published var openClawConnected = false
     @Published var glassesConnected = false
     @Published var liveTranscriptionText = ""
+    @Published var currentTranscriptionSource: TranscriptionSource = .g2Conversate
 
     // MARK: - Dependencies
 
@@ -63,20 +71,11 @@ class VoiceCommandManager: ObservableObject {
     let ttsService = TTSService()
     let glassesProvider: GlassesProvider
 
-    // MARK: - Speech Recognition
-
-    private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
-    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
-    private var recognitionTask: SFSpeechRecognitionTask?
-    private var wakeWordTask: SFSpeechRecognitionTask?
-    private var wakeWordRequest: SFSpeechAudioBufferRecognitionRequest?
-
     // MARK: - Timers & Tasks
 
     private var confirmationTimer: Timer?
     private var processingAnimationTimer: Timer?
     private var responseDisplayTimer: Timer?
-    private var hudUpdateTimer: Timer?
     private var vadTask: Task<Void, Never>?
 
     // MARK: - State Tracking
@@ -97,14 +96,18 @@ class VoiceCommandManager: ObservableObject {
                 self?.handleGesture(gesture)
             }
         }
+        
+        // Set up voice transcription callback (G2 Conversate)
+        self.glassesProvider.onVoiceTranscription = { [weak self] text, isFinal in
+            Task { @MainActor in
+                self?.handleVoiceTranscription(text, isFinal: isFinal)
+            }
+        }
     }
 
     // MARK: - Setup
 
     func setup() async {
-        // Request speech recognition permission
-        await requestSpeechPermission()
-        
         // Request notification permission
         await notificationBridge.requestPermission()
 
@@ -121,26 +124,18 @@ class VoiceCommandManager: ObservableObject {
         openClawConnected = openClawBridge.connectionState == .connected
         connectionStatus = openClawConnected ? .ready : .error("OpenClaw unreachable")
 
-        // Setup audio session
+        // Setup audio session for fallback phone mic
         do {
             try audioManager.setupAudioSession()
         } catch {
             connectionStatus = .error("Audio setup failed")
         }
 
-        // Start wake word detection if enabled
-        if EvenClawConfig.wakeWordEnabled {
-            await startWakeWordDetection()
-        }
-    }
-
-    // MARK: - Speech Permission
-
-    private func requestSpeechPermission() async {
-        return await withCheckedContinuation { continuation in
-            SFSpeechRecognizer.requestAuthorization { status in
-                continuation.resume()
-            }
+        // Display initial status
+        if glassesConnected {
+            displayOnHUD("Ready - long-press left TouchBar to speak")
+        } else {
+            displayOnHUD("Ready - tap mic button to speak")
         }
     }
 
@@ -164,8 +159,7 @@ class VoiceCommandManager: ObservableObject {
         // Clean up previous state
         switch oldState {
         case .listening:
-            stopLiveRecognition()
-            stopHUDUpdates()
+            stopPhoneMicIfActive()
         case .confirming:
             confirmationTimer?.invalidate()
         case .processing:
@@ -180,13 +174,19 @@ class VoiceCommandManager: ObservableObject {
         switch newState {
         case .idle:
             clearHUD()
-            if EvenClawConfig.wakeWordEnabled {
-                Task { await startWakeWordDetection() }
+            liveTranscriptionText = ""
+            if glassesConnected {
+                displayOnHUD("Ready - long-press left TouchBar to speak")
+            } else {
+                displayOnHUD("Ready - tap mic button to speak")
             }
         case .listening:
-            startLiveRecognition()
-            startHUDUpdates()
-            displayOnHUD("Listening...")
+            if currentTranscriptionSource == .g2Conversate {
+                displayOnHUD("Listening via glasses...")
+            } else {
+                displayOnHUD("Listening via phone...")
+                startPhoneMicCapture()
+            }
         case .confirming:
             displayConfirmationOnHUD()
             startConfirmationTimer()
@@ -205,134 +205,89 @@ class VoiceCommandManager: ObservableObject {
         }
     }
 
-    // MARK: - Wake Word Detection
+    // MARK: - G2 Conversate Transcription (Primary)
 
-    private func startWakeWordDetection() async {
-        guard currentState == .idle,
-              let speechRecognizer = speechRecognizer,
-              speechRecognizer.isAvailable else {
-            NSLog("[VCM] Wake word detection unavailable")
-            return
+    private func handleVoiceTranscription(_ text: String, isFinal: Bool) {
+        guard glassesConnected else { return }
+        
+        NSLog("[VCM] G2 transcript: '\(text)' (final: \(isFinal))")
+        
+        if currentState == .idle && !text.isEmpty {
+            // Start of new transcription session
+            currentTranscriptionSource = .g2Conversate
+            setState(.listening)
         }
+        
+        if currentState == .listening {
+            liveTranscriptionText = text
+            
+            // Update HUD with live transcription
+            if !text.isEmpty {
+                let hudText = HUDFormatter.formatResponse(text, maxChars: 200)
+                displayOnHUD(hudText)
+            }
+            
+            if isFinal && !text.isEmpty {
+                // Final transcription received
+                lastTranscription = text
+                setState(.confirming)
+            }
+        }
+    }
 
+    // MARK: - Phone Mic Transcription (Fallback)
+
+    private func startPhoneMicCapture() {
+        guard !glassesConnected || currentTranscriptionSource == .phoneMic else { return }
+        
         do {
-            wakeWordRequest = SFSpeechAudioBufferRecognitionRequest()
-            wakeWordRequest?.shouldReportPartialResults = true
-            
-            wakeWordTask = speechRecognizer.recognitionTask(with: wakeWordRequest!) { [weak self] result, error in
-                Task { @MainActor in
-                    self?.handleWakeWordResult(result, error: error)
-                }
-            }
-            
-            // Set up audio buffer callback
-            audioManager.onAudioBuffer = { [weak self] buffer in
-                self?.wakeWordRequest?.append(buffer)
-            }
-            
-            // Start low-level audio capture for wake word detection
             try audioManager.startCapture()
-            
-            NSLog("[VCM] Wake word detection started")
-        } catch {
-            NSLog("[VCM] Failed to start wake word detection: %@", error.localizedDescription)
-        }
-    }
-
-    private func handleWakeWordResult(_ result: SFSpeechRecognitionResult?, error: Error?) {
-        guard currentState == .idle else { return }
-        
-        if let result = result {
-            let transcription = result.bestTranscription.formattedString.lowercased()
-            if transcription.contains(EvenClawConfig.wakeWordPhrase.lowercased()) {
-                NSLog("[VCM] Wake word detected: %@", transcription)
-                stopWakeWordDetection()
-                setState(.listening)
-            }
-        }
-        
-        if let error = error {
-            NSLog("[VCM] Wake word recognition error: %@", error.localizedDescription)
-        }
-    }
-
-    private func stopWakeWordDetection() {
-        wakeWordTask?.cancel()
-        wakeWordTask = nil
-        wakeWordRequest = nil
-        audioManager.onAudioBuffer = nil
-        let _ = audioManager.stopCapture()
-    }
-
-    // MARK: - Live Recognition
-
-    private func startLiveRecognition() {
-        guard let speechRecognizer = speechRecognizer,
-              speechRecognizer.isAvailable else {
-            setState(.error("Speech recognition unavailable"))
-            return
-        }
-
-        do {
             hasDetectedSpeech = false
             liveTranscriptionText = ""
-            
-            // Setup speech recognition
-            recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-            recognitionRequest?.shouldReportPartialResults = true
-            
-            recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest!) { [weak self] result, error in
-                Task { @MainActor in
-                    self?.handleLiveRecognitionResult(result, error: error)
-                }
-            }
-            
-            // Set up audio buffer callback for live recognition
-            audioManager.onAudioBuffer = { [weak self] buffer in
-                self?.recognitionRequest?.append(buffer)
-            }
-            
-            // Start audio capture for both speech recognition and VAD (reuse if already running)
-            if !audioManager.isCapturing {
-                try audioManager.startCapture()
-            }
-            
-            // Start VAD for silence detection
             startVAD()
-            
-            NSLog("[VCM] Live recognition started")
+            NSLog("[VCM] Phone mic capture started")
         } catch {
-            setState(.error("Failed to start listening: \(error.localizedDescription)"))
+            setState(.error("Failed to start phone mic: \(error.localizedDescription)"))
         }
     }
 
-    private func handleLiveRecognitionResult(_ result: SFSpeechRecognitionResult?, error: Error?) {
-        guard currentState == .listening else { return }
+    private func stopPhoneMicIfActive() {
+        guard currentTranscriptionSource == .phoneMic else { return }
         
-        if let result = result {
-            liveTranscriptionText = result.bestTranscription.formattedString
-            hasDetectedSpeech = true
-        }
-        
-        if let error = error {
-            NSLog("[VCM] Live recognition error: %@", error.localizedDescription)
-        }
-    }
-
-    private func stopLiveRecognition() {
-        recognitionTask?.cancel()
-        recognitionTask = nil
-        recognitionRequest = nil
-        audioManager.onAudioBuffer = nil
-        
-        // Stop audio capture and get final PCM data
         let pcmData = audioManager.stopCapture()
-        lastTranscription = liveTranscriptionText
-        
         stopVAD()
+        
+        // Process with Whisper if we have enough audio
+        if pcmData.count > 16000 { // ~1 second at 16kHz
+            Task {
+                await processPhoneMicAudio(pcmData)
+            }
+        }
     }
 
-    // MARK: - VAD (Voice Activity Detection)
+    private func processPhoneMicAudio(_ pcmData: Data) async {
+        // Convert to WAV and transcribe with Whisper
+        let wavData = AudioManager.pcmToWAV(pcmData)
+        NSLog("[VCM] Processing phone mic WAV: %d bytes", wavData.count)
+
+        do {
+            let transcription = try await whisperService.transcribe(audioData: wavData)
+            guard !transcription.isEmpty else {
+                NSLog("[VCM] Empty phone mic transcription")
+                setState(.idle)
+                return
+            }
+            
+            lastTranscription = transcription
+            NSLog("[VCM] Phone mic transcribed: %@", transcription)
+            setState(.confirming)
+        } catch {
+            NSLog("[VCM] Phone mic Whisper error: %@", error.localizedDescription)
+            setState(.error("Phone mic transcription failed"))
+        }
+    }
+
+    // MARK: - VAD (Voice Activity Detection) - Phone Mic Only
 
     private func startVAD() {
         vadTask = Task { [weak self] in
@@ -342,7 +297,8 @@ class VoiceCommandManager: ObservableObject {
 
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
-                guard let self, self.currentState == .listening else { break }
+                guard let self, self.currentState == .listening, 
+                      self.currentTranscriptionSource == .phoneMic else { break }
 
                 let rms = self.audioManager.currentRMS
 
@@ -352,7 +308,7 @@ class VoiceCommandManager: ObservableObject {
                 } else if self.hasDetectedSpeech {
                     silentFrames += 1
                     if silentFrames >= requiredSilentFrames {
-                        NSLog("[VCM] Silence detected after speech")
+                        NSLog("[VCM] Phone mic silence detected")
                         await MainActor.run {
                             self.setState(.confirming)
                         }
@@ -366,29 +322,6 @@ class VoiceCommandManager: ObservableObject {
     private func stopVAD() {
         vadTask?.cancel()
         vadTask = nil
-    }
-
-    // MARK: - HUD Updates
-
-    private func startHUDUpdates() {
-        hudUpdateTimer = Timer.scheduledTimer(withTimeInterval: EvenClawConfig.hudUpdateRate, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.updateHUDWithLiveTranscription()
-            }
-        }
-    }
-
-    private func stopHUDUpdates() {
-        hudUpdateTimer?.invalidate()
-        hudUpdateTimer = nil
-    }
-
-    private func updateHUDWithLiveTranscription() {
-        guard currentState == .listening,
-              !liveTranscriptionText.isEmpty else { return }
-        
-        let hudText = HUDFormatter.formatResponse(liveTranscriptionText, maxChars: 200)
-        displayOnHUD(hudText)
     }
 
     // MARK: - Confirmation State
@@ -495,6 +428,35 @@ class VoiceCommandManager: ObservableObject {
         }
     }
 
+    // MARK: - Glasses Conversate Input (PRIMARY PATH)
+
+    /// Handle transcription from G2's Conversate service (0x0B-20).
+    /// The glasses do the speech recognition — we just get text + is_final.
+    /// This fires when user long-presses left TouchBar and speaks.
+    private func handleGlassesTranscription(_ text: String, isFinal: Bool) {
+        NSLog("[VCM] G2 Conversate: \"%@\" (final=%d)", text, isFinal ? 1 : 0)
+
+        if currentState == .idle {
+            // First transcript packet — transition to listening
+            setState(.listening)
+        }
+
+        guard currentState == .listening else { return }
+
+        // Update live transcription on phone UI
+        liveTranscriptionText = text
+        lastTranscription = text
+
+        // Push live text to HUD
+        displayOnHUD(text)
+
+        if isFinal {
+            // G2 says user is done speaking — go to confirmation
+            NSLog("[VCM] G2 final transcript, entering confirmation")
+            setState(.confirming)
+        }
+    }
+
     // MARK: - Processing Pipeline
 
     private func sendTranscription() {
@@ -518,14 +480,19 @@ class VoiceCommandManager: ObservableObject {
         }
     }
 
-    // MARK: - Manual Controls
+    // MARK: - Manual Controls (Fallback Phone Mic)
 
     func toggleListening() {
         switch currentState {
         case .idle:
+            // Force phone mic mode (fallback)
+            currentTranscriptionSource = .phoneMic
             setState(.listening)
         case .listening:
-            setState(.confirming)
+            if currentTranscriptionSource == .phoneMic {
+                setState(.confirming)
+            }
+            // If G2 Conversate is active, let it handle completion naturally
         case .confirming:
             sendTranscription()
         case .responding:

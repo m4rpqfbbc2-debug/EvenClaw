@@ -47,6 +47,15 @@ class EvenG2Provider: NSObject, GlassesProvider {
 
     var onConnectionStateChanged: ((GlassesConnectionState) -> Void)?
     var onGesture: ((GlassesGesture) -> Void)?
+    var onVoiceTranscription: ((String, Bool) -> Void)?
+    
+    // MARK: - Voice Transcription (Override)
+    
+    private var _onVoiceTranscription: ((String, Bool) -> Void)?
+    var onVoiceTranscription: ((String, Bool) -> Void)? {
+        get { _onVoiceTranscription }
+        set { _onVoiceTranscription = newValue }
+    }
 
     // MARK: - BLE
 
@@ -232,6 +241,10 @@ extension EvenG2Provider: G2BLEManagerDelegate {
     func bleManager(_ manager: G2BLEManager, didDiscoverDevice name: String, rssi: NSNumber) {
         log.info("Discovered: \(name) RSSI=\(rssi)")
     }
+    
+    func bleManager(_ manager: G2BLEManager, didReceiveVoiceTranscript text: String, isFinal: Bool) {
+        onVoiceTranscription?(text, isFinal)
+    }
 
     // MARK: - Gesture Parsing
 
@@ -295,9 +308,14 @@ extension EvenG2Provider: G2BLEManagerDelegate {
         guard data.count > G2Constants.headerSize + 2 else { return }
         let payload = data.subdata(in: G2Constants.headerSize..<(data.count - 2))
 
-        // Simple protobuf field extraction for text (field 7, sub-field 1)
-        // Full protobuf parsing would be better, but this handles the common case
-        log.info("Conversate data: \(payload.count) bytes")
-        // TODO: Implement full protobuf decoding for ConversateTranscript
+        log.info("Conversate data: \(payload.count) bytes - \(payload.map { String(format: "%02X", $0) }.joined(separator: " "))")
+        
+        // Parse ConversateMessage protobuf
+        if let (text, isFinal) = ConversateParser.parseConversateMessage(payload) {
+            log.info("Conversate transcript: '\(text)' (final: \(isFinal))")
+            onVoiceTranscription?(text, isFinal)
+        } else {
+            log.warning("Failed to parse Conversate message")
+        }
     }
 }

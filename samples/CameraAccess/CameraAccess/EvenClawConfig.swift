@@ -70,16 +70,11 @@ struct EvenClawConfig {
         set { defaults.set(newValue, forKey: "silenceDuration") }
     }
 
-    // MARK: - Wake Word
+    // MARK: - G2 Conversate
 
-    static var wakeWordEnabled: Bool {
-        get { defaults.object(forKey: "wakeWordEnabled") != nil ? defaults.bool(forKey: "wakeWordEnabled") : true }
-        set { defaults.set(newValue, forKey: "wakeWordEnabled") }
-    }
-
-    static var wakeWordPhrase: String {
-        get { defaults.string(forKey: "wakeWordPhrase") ?? "hey aisha" }
-        set { defaults.set(newValue, forKey: "wakeWordPhrase") }
+    static var conversateEnabled: Bool {
+        get { defaults.object(forKey: "conversateEnabled") != nil ? defaults.bool(forKey: "conversateEnabled") : true }
+        set { defaults.set(newValue, forKey: "conversateEnabled") }
     }
 
     // MARK: - Live Dictation

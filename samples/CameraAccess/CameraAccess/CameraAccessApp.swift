@@ -57,7 +57,7 @@ struct MainView: View {
                     // Live transcription during listening
                     if manager.currentState == .listening && !manager.liveTranscriptionText.isEmpty {
                         VStack(spacing: 4) {
-                            Text("Live transcription:")
+                            Text("Live transcription (\(transcriptionSourceText)):")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             Text(manager.liveTranscriptionText)
@@ -67,7 +67,7 @@ struct MainView: View {
                                 .padding(.horizontal)
                         }
                         .padding(.vertical, 8)
-                        .background(Color.blue.opacity(0.1))
+                        .background(transcriptionSourceColor.opacity(0.1))
                         .cornerRadius(8)
                     }
                     
@@ -194,17 +194,51 @@ struct MainView: View {
     private var statusText: String {
         switch manager.currentState {
         case .idle:
-            return EvenClawConfig.wakeWordEnabled ? "Say 'Hey Aisha' or tap to speak" : "Tap to speak"
+            if manager.glassesConnected {
+                return "Long-press left TouchBar or tap mic button"
+            } else {
+                return "Tap mic button to speak (glasses disconnected)"
+            }
         case .listening:
-            return "Listening… tap when done"
+            if manager.currentTranscriptionSource == .g2Conversate {
+                return "Listening via G2 glasses… speak naturally"
+            } else {
+                return "Listening via phone mic… tap when done"
+            }
         case .confirming:
-            return "Tap glasses to send or double-tap to cancel"
+            if manager.glassesConnected {
+                return "Tap glasses to send or double-tap to cancel"
+            } else {
+                return "Tap mic button to send"
+            }
         case .processing:
             return "Processing…"
         case .responding:
-            return "Tap glasses to scroll or double-tap to dismiss"
+            if manager.glassesConnected {
+                return "Tap glasses to scroll or double-tap to dismiss"
+            } else {
+                return "Response ready - tap mic to continue"
+            }
         case .error:
             return "Error - tap to retry"
+        }
+    }
+    
+    private var transcriptionSourceText: String {
+        switch manager.currentTranscriptionSource {
+        case .g2Conversate:
+            return "G2 glasses"
+        case .phoneMic:
+            return "phone mic"
+        }
+    }
+    
+    private var transcriptionSourceColor: Color {
+        switch manager.currentTranscriptionSource {
+        case .g2Conversate:
+            return .green
+        case .phoneMic:
+            return .blue
         }
     }
     
@@ -220,7 +254,7 @@ struct MainView: View {
             return "Thinking"
         case .responding:
             return "Response"
-        case .error(let message):
+        case .error:
             return "Error"
         }
     }

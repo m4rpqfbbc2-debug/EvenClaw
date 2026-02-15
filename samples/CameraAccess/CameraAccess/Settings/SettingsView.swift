@@ -13,8 +13,7 @@ struct SettingsView: View {
     @State private var ttsEnabled = EvenClawConfig.ttsEnabled
     @State private var ttsVoice = EvenClawConfig.ttsVoice
     @State private var silenceThreshold = Double(EvenClawConfig.silenceThreshold)
-    @State private var wakeWordEnabled = EvenClawConfig.wakeWordEnabled
-    @State private var wakeWordPhrase = EvenClawConfig.wakeWordPhrase
+    @State private var conversateEnabled = EvenClawConfig.conversateEnabled
     @State private var liveDictationEnabled = EvenClawConfig.liveDictationEnabled
     @State private var confirmationTimeout = EvenClawConfig.confirmationTimeout
 
@@ -43,11 +42,11 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("Wake Word") {
-                    Toggle("Enable Wake Word", isOn: $wakeWordEnabled)
-                    TextField("Wake Phrase", text: $wakeWordPhrase)
-                        .disabled(!wakeWordEnabled)
-                        .autocapitalization(.none)
+                Section("G2 Voice Input") {
+                    Toggle("Enable G2 Conversate", isOn: $conversateEnabled)
+                    Text("Long-press left TouchBar on G2 to activate")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("Live Dictation") {
@@ -88,8 +87,7 @@ struct SettingsView: View {
         EvenClawConfig.ttsEnabled = ttsEnabled
         EvenClawConfig.ttsVoice = ttsVoice
         EvenClawConfig.silenceThreshold = Float(silenceThreshold)
-        EvenClawConfig.wakeWordEnabled = wakeWordEnabled
-        EvenClawConfig.wakeWordPhrase = wakeWordPhrase
+        EvenClawConfig.conversateEnabled = conversateEnabled
         EvenClawConfig.liveDictationEnabled = liveDictationEnabled
         EvenClawConfig.confirmationTimeout = confirmationTimeout
     }
