@@ -29,11 +29,21 @@
 	<string>EvenClaw uses Bluetooth to connect to your Even Realities glasses for HUD display and audio.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>EvenClaw needs microphone access to hear your voice commands through the glasses.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>EvenClaw uses speech recognition for voice commands and live dictation.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
 	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>EvenClaw connects to OpenClaw AI gateway on your local network.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_http._tcp</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

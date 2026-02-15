@@ -79,6 +79,25 @@ class G2BLEManager: NSObject {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             self.connectContinuation = continuation
             self.state = .scanning
+            
+            // First: check for already-connected G2 peripherals (paired via iOS Settings)
+            let connected = self.centralManager.retrieveConnectedPeripherals(withServices: [G2Constants.serviceUUID])
+            for p in connected {
+                if let name = p.name, G2Constants.isG2Device(name: name) {
+                    log.info("Found already-connected G2: \(name)")
+                    self.delegate?.bleManager(self, didDiscoverDevice: name, rssi: NSNumber(value: 0))
+                    if G2Constants.isLeftEar(name: name) || self.peripheral == nil {
+                        self.peripheral = p
+                        p.delegate = self
+                        self.state = .connecting
+                        // Already connected at system level — discover services directly
+                        p.discoverServices([G2Constants.serviceUUID])
+                        return
+                    }
+                }
+            }
+            
+            // Fallback: scan for advertising G2 devices
             log.info("Scanning for Even G2 glasses...")
             self.centralManager.scanForPeripherals(
                 withServices: nil, // Scan all — filter by name
