@@ -23,6 +23,10 @@ class OpenClawBridge: ObservableObject {
     private var conversationHistory: [[String: String]] = []
     private let maxHistoryTurns = 10
 
+    /// The session key that merges EvenClaw voice into the main WhatsApp conversation.
+    /// This must match the owner's WhatsApp DM session so all platforms share one thread.
+    static let mergedSessionKey = "agent:main:whatsapp:dm:+447964018875"
+
     init() {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 120
@@ -32,7 +36,7 @@ class OpenClawBridge: ObservableObject {
         pingConfig.timeoutIntervalForRequest = 5
         self.pingSession = URLSession(configuration: pingConfig)
 
-        self.sessionKey = OpenClawBridge.newSessionKey()
+        self.sessionKey = OpenClawBridge.mergedSessionKey
     }
 
     var baseURL: String {
@@ -65,13 +69,8 @@ class OpenClawBridge: ObservableObject {
     }
 
     func resetSession() {
-        sessionKey = OpenClawBridge.newSessionKey()
+        // Keep the merged session key — just clear local history cache
         conversationHistory = []
-    }
-
-    private static func newSessionKey() -> String {
-        let ts = ISO8601DateFormatter().string(from: Date())
-        return "agent:main:evenclaw:\(ts)"
     }
 
     /// Send a message to OpenClaw and get a response.
