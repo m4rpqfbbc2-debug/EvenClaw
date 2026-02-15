@@ -9,6 +9,7 @@ struct SettingsView: View {
   @State private var openClawPort: String = ""
   @State private var openClawHookToken: String = ""
   @State private var openClawGatewayToken: String = ""
+  @State private var geminiSystemPrompt: String = ""
   @State private var webrtcSignalingURL: String = ""
   @State private var showResetConfirmation = false
 
@@ -25,6 +26,12 @@ struct SettingsView: View {
               .disableAutocorrection(true)
               .font(.system(.body, design: .monospaced))
           }
+        }
+
+        Section(header: Text("System Prompt"), footer: Text("Customize the AI assistant's behavior and personality. Changes take effect on the next Gemini session.")) {
+          TextEditor(text: $geminiSystemPrompt)
+            .font(.system(.body, design: .monospaced))
+            .frame(minHeight: 200)
         }
 
         Section(header: Text("OpenClaw"), footer: Text("Connect to an OpenClaw gateway running on your Mac for agentic tool-calling.")) {
@@ -122,6 +129,7 @@ struct SettingsView: View {
 
   private func loadCurrentValues() {
     geminiAPIKey = settings.geminiAPIKey
+    geminiSystemPrompt = settings.geminiSystemPrompt
     openClawHost = settings.openClawHost
     openClawPort = String(settings.openClawPort)
     openClawHookToken = settings.openClawHookToken
@@ -131,6 +139,7 @@ struct SettingsView: View {
 
   private func save() {
     settings.geminiAPIKey = geminiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    settings.geminiSystemPrompt = geminiSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
     settings.openClawHost = openClawHost.trimmingCharacters(in: .whitespacesAndNewlines)
     if let port = Int(openClawPort.trimmingCharacters(in: .whitespacesAndNewlines)) {
       settings.openClawPort = port

@@ -11,6 +11,7 @@ final class SettingsManager {
     case openClawPort
     case openClawHookToken
     case openClawGatewayToken
+    case geminiSystemPrompt
     case webrtcSignalingURL
   }
 
@@ -21,6 +22,11 @@ final class SettingsManager {
   var geminiAPIKey: String {
     get { defaults.string(forKey: Key.geminiAPIKey.rawValue) ?? Secrets.geminiAPIKey }
     set { defaults.set(newValue, forKey: Key.geminiAPIKey.rawValue) }
+  }
+
+  var geminiSystemPrompt: String {
+    get { defaults.string(forKey: Key.geminiSystemPrompt.rawValue) ?? GeminiConfig.defaultSystemInstruction }
+    set { defaults.set(newValue, forKey: Key.geminiSystemPrompt.rawValue) }
   }
 
   // MARK: - OpenClaw
@@ -58,7 +64,7 @@ final class SettingsManager {
   // MARK: - Reset
 
   func resetAll() {
-    for key in [Key.geminiAPIKey, .openClawHost, .openClawPort,
+    for key in [Key.geminiAPIKey, .geminiSystemPrompt, .openClawHost, .openClawPort,
                 .openClawHookToken, .openClawGatewayToken, .webrtcSignalingURL] {
       defaults.removeObject(forKey: key.rawValue)
     }
