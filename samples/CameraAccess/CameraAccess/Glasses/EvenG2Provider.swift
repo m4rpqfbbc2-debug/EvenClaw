@@ -47,9 +47,8 @@ class EvenG2Provider: NSObject, GlassesProvider {
 
     var onConnectionStateChanged: ((GlassesConnectionState) -> Void)?
     var onGesture: ((GlassesGesture) -> Void)?
-    var onVoiceTranscription: ((String, Bool) -> Void)?
     
-    // MARK: - Voice Transcription (Override)
+    // MARK: - Voice Transcription (Override protocol default)
     
     private var _onVoiceTranscription: ((String, Bool) -> Void)?
     var onVoiceTranscription: ((String, Bool) -> Void)? {
@@ -294,7 +293,7 @@ extension EvenG2Provider: G2BLEManagerDelegate {
         }
         
         if let gesture = detectedGesture {
-            log.info("Detected gesture: \(gesture)")
+            log.info("Detected gesture: \(String(describing: gesture))")
             onGesture?(gesture)
         }
     }
