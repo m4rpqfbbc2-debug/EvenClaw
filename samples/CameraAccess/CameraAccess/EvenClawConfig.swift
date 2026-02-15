@@ -19,7 +19,7 @@ struct EvenClawConfig {
     // MARK: - OpenClaw Gateway
 
     static var openClawHost: String {
-        get { defaults.string(forKey: "openClawHost") ?? "http://Aishas-Mac-mini.local" }
+        get { defaults.string(forKey: "openClawHost") ?? "http://192.168.1.162" }
         set { defaults.set(newValue, forKey: "openClawHost") }
     }
 
