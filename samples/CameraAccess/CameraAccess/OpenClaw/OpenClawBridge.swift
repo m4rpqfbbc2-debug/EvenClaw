@@ -65,7 +65,7 @@ class OpenClawBridge: ObservableObject {
 
   private static func newSessionKey() -> String {
     let ts = ISO8601DateFormatter().string(from: Date())
-    return "agent:main:glass:\(ts)"
+    return "agent:main:evenclaw:\(ts)"
   }
 
   // MARK: - Agent Chat (session continuity via x-openclaw-session-key header)
@@ -137,6 +137,19 @@ class OpenClawBridge: ObservableObject {
       NSLog("[OpenClaw] Agent error: %@", error.localizedDescription)
       lastToolCallStatus = .failed(toolName, error.localizedDescription)
       return .failure("Agent error: \(error.localizedDescription)")
+    }
+  }
+
+  // MARK: - HUD Display Formatting
+
+  /// Format a tool result for display on the glasses HUD.
+  /// Extracts the key information from a potentially verbose result.
+  func formatResultForHUD(_ result: ToolResult, task: String, maxChars: Int = 100) -> String {
+    switch result {
+    case .success(let content):
+      return HUDFormatter.formatToolResult(toolName: "execute", task: task, result: content, maxChars: maxChars)
+    case .failure(let error):
+      return HUDFormatter.truncate("Error: \(error)", to: maxChars)
     }
   }
 }
