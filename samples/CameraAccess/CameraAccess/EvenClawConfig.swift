@@ -69,4 +69,49 @@ struct EvenClawConfig {
         }
         set { defaults.set(newValue, forKey: "silenceDuration") }
     }
+
+    // MARK: - Wake Word
+
+    static var wakeWordEnabled: Bool {
+        get { defaults.object(forKey: "wakeWordEnabled") != nil ? defaults.bool(forKey: "wakeWordEnabled") : true }
+        set { defaults.set(newValue, forKey: "wakeWordEnabled") }
+    }
+
+    static var wakeWordPhrase: String {
+        get { defaults.string(forKey: "wakeWordPhrase") ?? "hey aisha" }
+        set { defaults.set(newValue, forKey: "wakeWordPhrase") }
+    }
+
+    // MARK: - Live Dictation
+
+    static var liveDictationEnabled: Bool {
+        get { defaults.object(forKey: "liveDictationEnabled") != nil ? defaults.bool(forKey: "liveDictationEnabled") : true }
+        set { defaults.set(newValue, forKey: "liveDictationEnabled") }
+    }
+
+    static var hudUpdateRate: TimeInterval {
+        get {
+            let v = defaults.double(forKey: "hudUpdateRate")
+            return v > 0 ? v : 0.5 // 500ms
+        }
+        set { defaults.set(newValue, forKey: "hudUpdateRate") }
+    }
+
+    // MARK: - Gesture
+
+    static var confirmationTimeout: TimeInterval {
+        get {
+            let v = defaults.double(forKey: "confirmationTimeout")
+            return v > 0 ? v : 5.0 // 5 seconds
+        }
+        set { defaults.set(newValue, forKey: "confirmationTimeout") }
+    }
+
+    static var responseDisplayDuration: TimeInterval {
+        get {
+            let v = defaults.double(forKey: "responseDisplayDuration")
+            return v > 0 ? v : 15.0 // 15 seconds
+        }
+        set { defaults.set(newValue, forKey: "responseDisplayDuration") }
+    }
 }

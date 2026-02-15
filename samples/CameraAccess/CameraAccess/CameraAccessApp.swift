@@ -47,41 +47,66 @@ struct MainView: View {
 
                 Spacer()
 
-                // Transcription
-                if !manager.lastTranscription.isEmpty {
-                    VStack(spacing: 4) {
-                        Text("You said:")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(manager.lastTranscription)
-                            .font(.body)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
+                // Current State Display
+                VStack(spacing: 12) {
+                    // State indicator
+                    Text(stateDisplayText)
+                        .font(.title2.bold())
+                        .foregroundStyle(stateColor)
+                    
+                    // Live transcription during listening
+                    if manager.currentState == .listening && !manager.liveTranscriptionText.isEmpty {
+                        VStack(spacing: 4) {
+                            Text("Live transcription:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(manager.liveTranscriptionText)
+                                .font(.body)
+                                .foregroundStyle(.primary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal)
+                        }
+                        .padding(.vertical, 8)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(8)
                     }
-                }
-
-                // Response
-                if !manager.lastResponse.isEmpty {
-                    VStack(spacing: 4) {
-                        Text("Response:")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(manager.lastResponse)
-                            .font(.body.bold())
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
-                            .lineLimit(6)
+                    
+                    // Final transcription
+                    if !manager.lastTranscription.isEmpty && manager.currentState != .listening {
+                        VStack(spacing: 4) {
+                            Text("You said:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(manager.lastTranscription)
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal)
+                        }
                     }
-                }
 
-                // Processing indicator
-                if manager.isProcessing {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                        Text("Processing…")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
+                    // Response
+                    if !manager.lastResponse.isEmpty {
+                        VStack(spacing: 4) {
+                            Text("Response:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(manager.lastResponse)
+                                .font(.body.bold())
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal)
+                                .lineLimit(6)
+                        }
+                    }
+
+                    // Processing indicator
+                    if manager.currentState == .processing {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("Processing…")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
 
@@ -97,19 +122,38 @@ struct MainView: View {
                             .frame(width: 88, height: 88)
                             .shadow(color: micButtonColor.opacity(0.4), radius: manager.isListening ? 12 : 4)
 
-                        if manager.isProcessing {
-                            ProgressView()
-                                .tint(.white)
-                                .scaleEffect(1.5)
-                        } else {
-                            Image(systemName: manager.isListening ? "stop.fill" : "mic.fill")
-                                .font(.title)
-                                .foregroundStyle(.white)
+                        Group {
+                            switch manager.currentState {
+                            case .processing:
+                                ProgressView()
+                                    .tint(.white)
+                                    .scaleEffect(1.5)
+                            case .listening:
+                                Image(systemName: "stop.fill")
+                                    .font(.title)
+                                    .foregroundStyle(.white)
+                            case .confirming:
+                                Image(systemName: "paperplane.fill")
+                                    .font(.title)
+                                    .foregroundStyle(.white)
+                            case .responding:
+                                Image(systemName: "checkmark")
+                                    .font(.title)
+                                    .foregroundStyle(.white)
+                            case .error:
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.title)
+                                    .foregroundStyle(.white)
+                            default:
+                                Image(systemName: "mic.fill")
+                                    .font(.title)
+                                    .foregroundStyle(.white)
+                            }
                         }
                     }
                 }
-                .disabled(manager.isProcessing)
-                .animation(.easeInOut(duration: 0.2), value: manager.isListening)
+                .disabled(manager.currentState == .processing)
+                .animation(.easeInOut(duration: 0.2), value: manager.currentState)
 
                 // Status text
                 Text(statusText)
@@ -131,15 +175,71 @@ struct MainView: View {
     }
 
     private var micButtonColor: Color {
-        if manager.isProcessing { return .gray }
-        if manager.isListening { return .red }
-        return .blue
+        switch manager.currentState {
+        case .idle:
+            return .blue
+        case .listening:
+            return .red
+        case .confirming:
+            return .orange
+        case .processing:
+            return .gray
+        case .responding:
+            return .green
+        case .error:
+            return .red
+        }
     }
 
     private var statusText: String {
-        if manager.isProcessing { return "Processing…" }
-        if manager.isListening { return "Listening… tap to stop" }
-        return "Tap to speak"
+        switch manager.currentState {
+        case .idle:
+            return EvenClawConfig.wakeWordEnabled ? "Say 'Hey Aisha' or tap to speak" : "Tap to speak"
+        case .listening:
+            return "Listening… tap when done"
+        case .confirming:
+            return "Tap glasses to send or double-tap to cancel"
+        case .processing:
+            return "Processing…"
+        case .responding:
+            return "Tap glasses to scroll or double-tap to dismiss"
+        case .error:
+            return "Error - tap to retry"
+        }
+    }
+    
+    private var stateDisplayText: String {
+        switch manager.currentState {
+        case .idle:
+            return "Ready"
+        case .listening:
+            return "Listening"
+        case .confirming:
+            return "Confirm"
+        case .processing:
+            return "Thinking"
+        case .responding:
+            return "Response"
+        case .error(let message):
+            return "Error"
+        }
+    }
+    
+    private var stateColor: Color {
+        switch manager.currentState {
+        case .idle:
+            return .primary
+        case .listening:
+            return .blue
+        case .confirming:
+            return .orange
+        case .processing:
+            return .purple
+        case .responding:
+            return .green
+        case .error:
+            return .red
+        }
     }
 }
 

@@ -11,10 +11,13 @@ class AudioManager: ObservableObject {
 
     /// Called with RMS level during capture (for UI metering).
     var onAudioLevel: ((Float) -> Void)?
+    
+    /// Called with audio buffer for speech recognition.
+    var onAudioBuffer: ((AVAudioPCMBuffer) -> Void)?
 
     private let audioEngine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
-    private var isCapturing = false
+    private(set) var isCapturing = false
 
     /// Accumulated raw PCM data from mic (16kHz mono Int16).
     private var capturedData = Data()
@@ -90,6 +93,11 @@ class AudioManager: ObservableObject {
 
             DispatchQueue.main.async { self.currentRMS = rms }
             self.onAudioLevel?(rms)
+            
+            // Call speech recognition callback if set
+            if let outBuf = (converter != nil) ? outBuf : buffer {
+                self.onAudioBuffer?(outBuf)
+            }
 
             self.captureQueue.async {
                 self.capturedData.append(pcmData)

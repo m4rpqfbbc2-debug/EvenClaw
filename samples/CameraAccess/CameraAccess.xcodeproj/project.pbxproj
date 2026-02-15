@@ -21,6 +21,7 @@
 		B100000A000000010000001 /* G2TextFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000A000000010000002 /* G2TextFormatter.swift */; };
 		B100000B000000010000001 /* G2BLEManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000B000000010000002 /* G2BLEManager.swift */; };
 		C100000100000001 /* EvenClawConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = C100000100000002 /* EvenClawConfig.swift */; };
+		E6437AE993594EDAB2E3DF77 /* Speech.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB5B664D60FD453A8489B0C7 /* Speech.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -65,6 +66,7 @@
 		B100000B000000010000002 /* G2BLEManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = G2BLEManager.swift; sourceTree = "<group>"; };
 		C100000100000002 /* EvenClawConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EvenClawConfig.swift; sourceTree = "<group>"; };
 		E699CC952E8150670052C240 /* CameraAccessTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CameraAccessTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB5B664D60FD453A8489B0C7 /* Speech.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Speech.framework; path = System/Library/Frameworks/Speech.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -77,6 +79,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+							E6437AE993594EDAB2E3DF77 /* Speech.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

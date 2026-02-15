@@ -213,19 +213,77 @@ extension EvenG2Provider: G2BLEManagerDelegate {
         let serviceHi = data[6]
         let serviceLo = data[7]
 
-        // Detect touch/gesture events from glasses
-        // TouchBar events come via specific service IDs
-        // TODO: Map exact gesture service IDs from captured traffic
         log.debug("Response: svc=0x\(String(format: "%02X", serviceHi))-\(String(format: "%02X", serviceLo)) len=\(data.count)")
 
+        // TouchBar gesture events (based on protocol analysis)
+        if serviceHi == 0x09 && serviceLo == 0x20 {
+            parseGestureResponse(data)
+        }
+        // Alternative gesture service (some G2 variants use different IDs)
+        else if serviceHi == 0x08 && serviceLo == 0x20 {
+            parseGestureResponse(data)
+        }
         // Conversate service (0x0B-20) — voice transcription from glasses mic
-        if serviceHi == 0x0B && serviceLo == 0x20 {
+        else if serviceHi == 0x0B && serviceLo == 0x20 {
             parseConversateResponse(data)
         }
     }
 
     func bleManager(_ manager: G2BLEManager, didDiscoverDevice name: String, rssi: NSNumber) {
         log.info("Discovered: \(name) RSSI=\(rssi)")
+    }
+
+    // MARK: - Gesture Parsing
+
+    /// Parse TouchBar gesture events from G2.
+    /// Service 0x09-20 or 0x08-20 depending on G2 variant.
+    private func parseGestureResponse(_ data: Data) {
+        // Payload starts at byte 8, before CRC (last 2 bytes)
+        guard data.count > G2Constants.headerSize + 2 else { return }
+        let payload = data.subdata(in: G2Constants.headerSize..<(data.count - 2))
+        
+        log.info("Gesture data: \(payload.map { String(format: "%02X", $0) }.joined(separator: " "))")
+        
+        // Parse gesture type from payload
+        // This is based on reverse engineering - may need adjustment for different G2 variants
+        guard payload.count >= 2 else { return }
+        
+        let gestureType = payload[0]
+        let gestureValue = payload[1]
+        
+        var detectedGesture: GlassesGesture?
+        
+        // Map gesture bytes to GlassesGesture enum
+        // These mappings may need adjustment based on actual G2 protocol
+        switch gestureType {
+        case 0x01: // Single tap
+            if gestureValue == 0x01 {
+                detectedGesture = .tap
+            }
+        case 0x02: // Double tap
+            if gestureValue == 0x01 {
+                detectedGesture = .doubleTap
+            }
+        case 0x03: // Swipe forward
+            if gestureValue == 0x01 {
+                detectedGesture = .swipeForward
+            }
+        case 0x04: // Swipe backward
+            if gestureValue == 0x01 {
+                detectedGesture = .swipeBackward
+            }
+        case 0x05: // Long press/hold
+            if gestureValue == 0x01 {
+                detectedGesture = .longPress
+            }
+        default:
+            log.debug("Unknown gesture type: 0x\(String(format: "%02X", gestureType))")
+        }
+        
+        if let gesture = detectedGesture {
+            log.info("Detected gesture: \(gesture)")
+            onGesture?(gesture)
+        }
     }
 
     // MARK: - Conversate Parsing

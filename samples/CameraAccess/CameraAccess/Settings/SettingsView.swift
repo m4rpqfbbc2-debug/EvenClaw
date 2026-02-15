@@ -13,6 +13,10 @@ struct SettingsView: View {
     @State private var ttsEnabled = EvenClawConfig.ttsEnabled
     @State private var ttsVoice = EvenClawConfig.ttsVoice
     @State private var silenceThreshold = Double(EvenClawConfig.silenceThreshold)
+    @State private var wakeWordEnabled = EvenClawConfig.wakeWordEnabled
+    @State private var wakeWordPhrase = EvenClawConfig.wakeWordPhrase
+    @State private var liveDictationEnabled = EvenClawConfig.liveDictationEnabled
+    @State private var confirmationTimeout = EvenClawConfig.confirmationTimeout
 
     private let voices = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
 
@@ -36,6 +40,22 @@ struct SettingsView: View {
                     Toggle("Enable TTS", isOn: $ttsEnabled)
                     Picker("Voice", selection: $ttsVoice) {
                         ForEach(voices, id: \.self) { Text($0).tag($0) }
+                    }
+                }
+
+                Section("Wake Word") {
+                    Toggle("Enable Wake Word", isOn: $wakeWordEnabled)
+                    TextField("Wake Phrase", text: $wakeWordPhrase)
+                        .disabled(!wakeWordEnabled)
+                        .autocapitalization(.none)
+                }
+
+                Section("Live Dictation") {
+                    Toggle("Enable Live Dictation", isOn: $liveDictationEnabled)
+                    VStack(alignment: .leading) {
+                        Text("Confirmation Timeout: \(confirmationTimeout, specifier: "%.1f")s")
+                            .font(.caption)
+                        Slider(value: $confirmationTimeout, in: 2.0...10.0, step: 0.5)
                     }
                 }
 
@@ -68,5 +88,9 @@ struct SettingsView: View {
         EvenClawConfig.ttsEnabled = ttsEnabled
         EvenClawConfig.ttsVoice = ttsVoice
         EvenClawConfig.silenceThreshold = Float(silenceThreshold)
+        EvenClawConfig.wakeWordEnabled = wakeWordEnabled
+        EvenClawConfig.wakeWordPhrase = wakeWordPhrase
+        EvenClawConfig.liveDictationEnabled = liveDictationEnabled
+        EvenClawConfig.confirmationTimeout = confirmationTimeout
     }
 }
