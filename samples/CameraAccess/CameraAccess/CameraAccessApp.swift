@@ -1,143 +1,150 @@
 // EvenClaw - XGX.ai
 // Copyright 2026 XGX.ai. All rights reserved.
+//
+// EvenClaw App — Voice-to-HUD assistant for Even Realities G2 glasses.
+// Mic → Whisper → OpenClaw → HUD notification + TTS.
 
-//
-// CameraAccessApp.swift
-//
-// Main entry point for EvenClaw — AI assistant for Even Realities G2 smart glasses.
-// Forked from VisionClaw (Meta Ray-Ban). The Meta DAT SDK has been replaced with
-// a hardware abstraction layer (GlassesProvider) that supports multiple backends.
-//
-
-import Foundation
 import SwiftUI
 
-// NOTE: Meta DAT SDK imports removed — EvenClaw uses GlassesProvider abstraction instead.
-// import MWDATCore
-// import MWDATMockDevice
-
 @main
-struct CameraAccessApp: App {
-
-    /// The glasses provider determines how display output is routed.
-    /// Change this to switch between backends:
-    ///   - PhoneOnlyProvider()       → no glasses, audio only
-    ///   - NotificationProvider()    → ANCS notifications (works with any glasses)
-    ///   - EvenG2Provider()          → Even Hub SDK (when available)
-    @StateObject private var sessionManager = AISessionManager(
+struct EvenClawApp: App {
+    @StateObject private var manager = VoiceCommandManager(
         glassesProvider: NotificationProvider()
     )
 
     var body: some Scene {
         WindowGroup {
-            // TODO: Replace with EvenClaw-specific UI
-            // For now, reuse the existing views with the new session manager
-            MainAppView_EvenClaw(sessionManager: sessionManager)
+            MainView(manager: manager)
+                .task { await manager.setup() }
         }
     }
 }
 
-/// Temporary top-level view for EvenClaw.
-/// This wraps the existing GeminiSessionViewModel-based UI while we migrate.
-struct MainAppView_EvenClaw: View {
-    @ObservedObject var sessionManager: AISessionManager
+// MARK: - Main View
+
+struct MainView: View {
+    @ObservedObject var manager: VoiceCommandManager
+    @State private var showSettings = false
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
-                // Status header
-                VStack(spacing: 8) {
+            VStack(spacing: 24) {
+                // Title
+                VStack(spacing: 4) {
                     Text("EvenClaw")
                         .font(.largeTitle.bold())
-
-                    Text("AI Assistant for Even G2")
+                    Text("Voice Assistant for Even G2")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-
-                    // Connection indicators
-                    HStack(spacing: 16) {
-                        StatusDot(
-                            label: "Gemini",
-                            isConnected: sessionManager.connectionState == .ready
-                        )
-                        StatusDot(
-                            label: "OpenClaw",
-                            isConnected: sessionManager.openClawConnectionState == .connected
-                        )
-                        StatusDot(
-                            label: "Glasses",
-                            isConnected: sessionManager.glassesConnectionState == .connected
-                        )
-                    }
-                    .padding(.top, 4)
                 }
-                .padding(.top, 40)
+                .padding(.top, 32)
+
+                // Status dots
+                HStack(spacing: 20) {
+                    StatusDot(label: "OpenClaw", isConnected: manager.openClawConnected)
+                    StatusDot(label: "Glasses", isConnected: manager.glassesConnected)
+                }
 
                 Spacer()
 
-                // Transcription display
-                if !sessionManager.userTranscript.isEmpty {
-                    Text(sessionManager.userTranscript)
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal)
-                        .multilineTextAlignment(.center)
-                }
-
-                if !sessionManager.aiTranscript.isEmpty {
-                    Text(sessionManager.aiTranscript)
-                        .font(.body.bold())
-                        .padding(.horizontal)
-                        .multilineTextAlignment(.center)
-                }
-
-                // Tool call status
-                if case .executing(let name) = sessionManager.toolCallStatus {
-                    HStack {
-                        ProgressView()
-                        Text("Running: \(name)")
+                // Transcription
+                if !manager.lastTranscription.isEmpty {
+                    VStack(spacing: 4) {
+                        Text("You said:")
                             .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(manager.lastTranscription)
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+                }
+
+                // Response
+                if !manager.lastResponse.isEmpty {
+                    VStack(spacing: 4) {
+                        Text("Response:")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(manager.lastResponse)
+                            .font(.body.bold())
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                            .lineLimit(6)
+                    }
+                }
+
+                // Processing indicator
+                if manager.isProcessing {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text("Processing…")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
                 Spacer()
 
-                // Main action button
+                // Mic button
                 Button {
-                    Task {
-                        if sessionManager.isActive {
-                            sessionManager.stopSession()
-                        } else {
-                            await sessionManager.startSession()
-                        }
-                    }
+                    manager.toggleListening()
                 } label: {
-                    Circle()
-                        .fill(sessionManager.isActive ? Color.red : Color.blue)
-                        .frame(width: 80, height: 80)
-                        .overlay {
-                            Image(systemName: sessionManager.isActive ? "stop.fill" : "mic.fill")
+                    ZStack {
+                        Circle()
+                            .fill(micButtonColor)
+                            .frame(width: 88, height: 88)
+                            .shadow(color: micButtonColor.opacity(0.4), radius: manager.isListening ? 12 : 4)
+
+                        if manager.isProcessing {
+                            ProgressView()
+                                .tint(.white)
+                                .scaleEffect(1.5)
+                        } else {
+                            Image(systemName: manager.isListening ? "stop.fill" : "mic.fill")
                                 .font(.title)
                                 .foregroundStyle(.white)
                         }
+                    }
                 }
-                .padding(.bottom, 60)
+                .disabled(manager.isProcessing)
+                .animation(.easeInOut(duration: 0.2), value: manager.isListening)
 
-                // Error display
-                if let error = sessionManager.errorMessage {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .padding(.horizontal)
-                        .multilineTextAlignment(.center)
+                // Status text
+                Text(statusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 40)
+            }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { showSettings = true } label: {
+                        Image(systemName: "gear")
+                    }
                 }
             }
-            .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
+            }
         }
+    }
+
+    private var micButtonColor: Color {
+        if manager.isProcessing { return .gray }
+        if manager.isListening { return .red }
+        return .blue
+    }
+
+    private var statusText: String {
+        if manager.isProcessing { return "Processing…" }
+        if manager.isListening { return "Listening… tap to stop" }
+        return "Tap to speak"
     }
 }
 
-/// Simple status indicator dot.
+// MARK: - Status Dot
+
 struct StatusDot: View {
     let label: String
     let isConnected: Bool

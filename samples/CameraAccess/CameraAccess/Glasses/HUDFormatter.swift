@@ -137,14 +137,14 @@ struct HUDFormatter {
         result = result.replacingOccurrences(
             of: #"^\s*[-*]\s+"#,
             with: "• ",
-            options: [.regularExpression, .anchorsMatchLines]
+            options: [.regularExpression]
         )
 
         // Remove numbered lists (1. 2. etc.)
         result = result.replacingOccurrences(
             of: #"^\s*\d+\.\s+"#,
             with: "",
-            options: [.regularExpression, .anchorsMatchLines]
+            options: [.regularExpression]
         )
 
         return result

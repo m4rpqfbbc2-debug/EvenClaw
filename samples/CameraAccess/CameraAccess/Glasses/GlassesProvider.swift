@@ -158,4 +158,19 @@ protocol GlassesProvider: AnyObject {
 
     /// Callback for gesture events from the glasses.
     var onGesture: ((GlassesGesture) -> Void)? { get set }
+
+    // MARK: - Voice Input (Optional)
+
+    /// Callback for voice transcription from glasses mic (e.g. G2 Conversate service).
+    /// Default implementation is nil (not supported).
+    var onVoiceTranscription: ((String, Bool) -> Void)? { get set }
+}
+
+// MARK: - Default Implementations
+
+extension GlassesProvider {
+    var onVoiceTranscription: ((String, Bool) -> Void)? {
+        get { nil }
+        set { }
+    }
 }
