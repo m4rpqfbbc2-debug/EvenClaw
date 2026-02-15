@@ -9,7 +9,7 @@ import SwiftUI
 @main
 struct EvenClawApp: App {
     @StateObject private var manager = VoiceCommandManager(
-        glassesProvider: NotificationProvider()
+        glassesProvider: EvenG2Provider()
     )
 
     var body: some Scene {
