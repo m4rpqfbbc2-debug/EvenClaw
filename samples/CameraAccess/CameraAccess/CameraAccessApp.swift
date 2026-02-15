@@ -1,132 +1,162 @@
 // EvenClaw - XGX.ai
 // Copyright 2026 XGX.ai. All rights reserved.
+//
+// Main app: BLE packet sniffer for Even G2 Conversate reverse engineering
 
 import SwiftUI
 
 @main
 struct EvenClawApp: App {
-    @StateObject private var manager = VoiceCommandManager(
-        glassesProvider: EvenG2Provider()
-    )
+    @StateObject private var sniffer = G2Sniffer()
 
     var body: some Scene {
         WindowGroup {
-            MainView(manager: manager)
-                .task { await manager.setup() }
+            SnifferView(sniffer: sniffer)
         }
     }
 }
 
-struct MainView: View {
-    @ObservedObject var manager: VoiceCommandManager
+struct SnifferView: View {
+    @ObservedObject var sniffer: G2Sniffer
     @State private var showSettings = false
 
     var body: some View {
-        VStack(spacing: 24) {
-            Spacer()
-
-            // Title
-            Text("EvenClaw")
-                .font(.largeTitle.bold())
-
-            // Status dots
-            HStack(spacing: 20) {
-                StatusDot(label: "OpenClaw", isConnected: manager.openClawConnected)
-                StatusDot(label: "Glasses", isConnected: manager.glassesConnected)
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("EvenClaw")
+                    .font(.headline.bold())
+                Spacer()
+                Button { showSettings = true } label: {
+                    Image(systemName: "gear").font(.title3)
+                }
             }
+            .padding(.horizontal)
+            .padding(.top, 8)
 
-            // Debug
-            if !manager.debugStatus.isEmpty {
-                Text(manager.debugStatus)
-                    .font(.caption2)
-                    .foregroundStyle(.yellow)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
+            // Status bar
+            HStack(spacing: 16) {
+                StatusDot(label: "BLE", isConnected: sniffer.bleConnected)
+                StatusDot(label: "Auth", isConnected: sniffer.authenticated)
+                StatusDot(label: "OpenClaw", isConnected: sniffer.openClawConnected)
+                Spacer()
+                Text("\(sniffer.packetCount) pkts")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
             }
+            .padding(.horizontal)
+            .padding(.vertical, 6)
 
-            Spacer()
-
-            // Live text / response
-            if !manager.liveText.isEmpty && manager.state == .listening {
-                Text(manager.liveText)
-                    .font(.body)
-                    .foregroundStyle(.blue)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-            }
-
-            if !manager.responseText.isEmpty && manager.state == .idle {
-                Text(manager.responseText)
-                    .font(.body)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-                    .lineLimit(8)
-            }
-
-            if case .error(let msg) = manager.state {
-                Text(msg)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-            }
-
-            Spacer()
-
-            // Mic button
-            Button { manager.toggleMic() } label: {
-                Circle()
-                    .fill(buttonColor)
-                    .frame(width: 88, height: 88)
-                    .overlay {
-                        Image(systemName: buttonIcon)
-                            .font(.title)
-                            .foregroundStyle(.white)
+            // Conversate live text (if any)
+            if !sniffer.conversateText.isEmpty {
+                VStack(spacing: 4) {
+                    Text(sniffer.conversateText)
+                        .font(.body)
+                        .foregroundStyle(.green)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                    if sniffer.conversateFinal {
+                        Text("✅ FINAL")
+                            .font(.caption2.bold())
+                            .foregroundStyle(.green)
                     }
+                }
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+                .background(Color.green.opacity(0.1))
             }
-            .disabled(manager.state == .sending)
 
-            Text(statusText)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Spacer().frame(height: 20)
-        }
-        .overlay(alignment: .topTrailing) {
-            Button { showSettings = true } label: {
-                Image(systemName: "gear")
-                    .padding()
+            // Status message
+            if !sniffer.statusMessage.isEmpty {
+                Text(sniffer.statusMessage)
+                    .font(.caption)
+                    .foregroundStyle(.yellow)
+                    .padding(.horizontal)
+                    .padding(.vertical, 4)
             }
+
+            // Packet log
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(sniffer.packetLog) { entry in
+                            PacketRow(entry: entry)
+                                .id(entry.id)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                }
+                .onChange(of: sniffer.packetLog.count) { _ in
+                    if let last = sniffer.packetLog.last {
+                        proxy.scrollTo(last.id, anchor: .bottom)
+                    }
+                }
+            }
+
+            // Controls
+            HStack(spacing: 12) {
+                Button(sniffer.bleConnected ? "Disconnect" : "Connect") {
+                    if sniffer.bleConnected {
+                        sniffer.disconnect()
+                    } else {
+                        Task { await sniffer.connectAndAuth() }
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(sniffer.bleConnected ? .red : .blue)
+
+                Button("Clear") {
+                    sniffer.clearLog()
+                }
+                .buttonStyle(.bordered)
+
+                Button("Copy Log") {
+                    UIPasteboard.general.string = sniffer.exportLog()
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding()
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
-    }
-
-    private var buttonColor: Color {
-        switch manager.state {
-        case .idle: return .blue
-        case .listening: return .red
-        case .sending: return .purple
-        case .error: return .orange
+        .task {
+            await sniffer.connectAndAuth()
         }
     }
+}
 
-    private var buttonIcon: String {
-        switch manager.state {
-        case .idle, .error: return "mic.fill"
-        case .listening: return "stop.fill"
-        case .sending: return "ellipsis"
-        }
-    }
+struct PacketRow: View {
+    let entry: PacketLogEntry
 
-    private var statusText: String {
-        switch manager.state {
-        case .idle: return "Tap to speak"
-        case .listening: return "Listening... tap to send"
-        case .sending: return "Thinking..."
-        case .error: return "Tap to try again"
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack {
+                Text(entry.timestamp)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                Text(entry.direction)
+                    .font(.caption2.bold())
+                    .foregroundStyle(entry.direction == "RX" ? .cyan : .orange)
+                Text(entry.serviceLabel)
+                    .font(.caption2.bold())
+                    .foregroundStyle(entry.isConversate ? .green : .white)
+                Spacer()
+                Text("\(entry.size)B")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+            Text(entry.hexDump)
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(.gray)
+                .lineLimit(2)
+            if let parsed = entry.parsedContent {
+                Text(parsed)
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+            }
         }
+        .padding(.vertical, 2)
     }
 }
 
@@ -135,10 +165,10 @@ struct StatusDot: View {
     let isConnected: Bool
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 3) {
             Circle()
-                .fill(isConnected ? Color.green : Color.gray)
-                .frame(width: 8, height: 8)
+                .fill(isConnected ? .green : .gray)
+                .frame(width: 7, height: 7)
             Text(label)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
