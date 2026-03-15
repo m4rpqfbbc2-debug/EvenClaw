@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EvenClaw v5</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0a0a0a;
+      color: #00ff41;
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 13px;
+      padding: 16px;
+      min-height: 100vh;
+    }
+    #header {
+      font-size: 16px;
+      font-weight: bold;
+      margin-bottom: 12px;
+      color: #00ff41;
+    }
+    #status {
+      color: #666;
+      margin-bottom: 8px;
+    }
+    #status .dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+      background: #666;
+    }
+    #status .dot.green { background: #00ff41; }
+    #status .dot.red { background: #ff4141; }
+    #status .dot.yellow { background: #ffff41; }
+    #log {
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 4px;
+      padding: 12px;
+      height: calc(100vh - 120px);
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      font-size: 12px;
+      color: #888;
+    }
+    #log .info { color: #00ff41; }
+    #log .warn { color: #ffff41; }
+    #log .error { color: #ff4141; }
+    #log .debug { color: #555; }
+  </style>
+</head>
+<body>
+  <div id="header">EVENCLAW v5</div>
+  <div id="status"><span class="dot" id="dot"></span><span id="status-text">Initializing...</span></div>
+  <div id="log"></div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
