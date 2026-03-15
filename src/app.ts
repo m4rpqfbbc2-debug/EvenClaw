@@ -24,7 +24,7 @@ let animationTimer: ReturnType<typeof setInterval> | null = null;
 let animFrame = 0;
 
 const TYPEWRITER_SPEED_MS = 2; // ~500 chars/sec for responses
-const TRANSCRIPT_TYPEWRITER_SPEED_MS = 0; // instant for transcript
+const TRANSCRIPT_TYPEWRITER_SPEED_MS = -1; // skip typewriter, show instantly
 const BOOT_LINE_DELAY_MS = 600;
 const BOOT_HOLD_MS = 2000;
 const CONVERSATION_TIMEOUT_MS = 60000;
@@ -199,25 +199,15 @@ async function handleRecordingDone(pcmData: Uint8Array): Promise<void> {
     logFn('Sending to AI...', 'info');
     const chatPromise = api.chat(transcript, chatHistory);
 
-    // Typewriter the transcript while AI processes (faster speed)
+    // Show transcript instantly, then spinner while AI thinks
     clearTimers();
-    let transcriptChars = 0;
     animFrame = 0;
-    while (transcriptChars < transcript.length && state === 'PROCESSING') {
-      transcriptChars++;
+    await bridge.updateHUD(hud.hudProcessing(animFrame, transcript));
+    animationTimer = setInterval(async () => {
+      if (state !== 'PROCESSING') return;
       animFrame++;
-      await bridge.updateHUD(hud.hudProcessingTypewriter(animFrame, transcript, transcriptChars));
-      await sleep(TRANSCRIPT_TYPEWRITER_SPEED_MS);
-    }
-
-    // Show spinner while waiting for AI to finish
-    if (state === 'PROCESSING') {
-      animationTimer = setInterval(async () => {
-        if (state !== 'PROCESSING') return;
-        animFrame++;
-        await bridge.updateHUD(hud.hudProcessing(animFrame, transcript));
-      }, 200);
-    }
+      await bridge.updateHUD(hud.hudProcessing(animFrame, transcript));
+    }, 200);
 
     // Wait for AI response
     const response = await chatPromise;
