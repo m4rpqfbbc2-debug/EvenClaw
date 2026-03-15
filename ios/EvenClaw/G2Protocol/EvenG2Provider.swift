@@ -58,32 +58,42 @@ class EvenG2Provider: NSObject, GlassesProvider {
 
     // MARK: - BLE
 
-    private let bleManager = G2BLEManager()
+    private let bleManager: G2BLEManager
     private var isDisplayActive = false
 
     // MARK: - Init
 
+    /// Standalone mode — creates its own G2BLEManager.
     override init() {
+        self.bleManager = G2BLEManager()
+        super.init()
+        bleManager.delegate = self
+    }
+
+    /// Injected mode — uses a pre-configured G2BLEManager (from G2AutoConnector).
+    init(bleManager: G2BLEManager) {
+        self.bleManager = bleManager
         super.init()
         bleManager.delegate = self
     }
 
     // MARK: - GlassesProvider
 
-    /// Connect using a pre-discovered peripheral (skips BLE scanning)
-    func connect(peripheral: CBPeripheral) async throws {
+    /// Connect using a pre-discovered, already-connected peripheral.
+    /// Discovers services, characteristics, runs auth handshake.
+    func connectKnown(peripheral: CBPeripheral) async throws {
         connectionState = .connecting
-        log.info("Connecting to pre-found G2...")
+        log.info("Connecting to known G2 peripheral...")
         do {
-            try await bleManager.connectToPeripheral(peripheral)
+            try await bleManager.connectToKnownPeripheral(peripheral)
             connectionState = .connected
-            log.info("Even G2 connected via pre-found peripheral")
+            log.info("Even G2 connected via known peripheral")
         } catch {
             connectionState = .error(error.localizedDescription)
             throw error
         }
     }
-    
+
     func connect() async throws {
         connectionState = .connecting
         log.info("Connecting to Even G2...")

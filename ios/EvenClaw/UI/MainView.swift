@@ -6,144 +6,8 @@
 // Phone mic is a small fallback. G2 connection status visible on every state.
 
 import SwiftUI
-import CoreBluetooth
-import os.log
-
-// BLEDebugScanner.swift
-// Temporary debug scanner that finds ALL BLE peripherals and logs them.
-// This helps us identify how the G2 glasses appear to CoreBluetooth.
-
-
-private let log = Logger(subsystem: "ai.xgx.evenclaw", category: "BLEDebug")
-
-class BLEDebugScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate, ObservableObject {
-    private var centralManager: CBCentralManager!
-    @Published var discoveredDevices: [(name: String, uuid: String, rssi: Int)] = []
-    @Published var connectedDevices: [(name: String, uuid: String)] = []
-    @Published var foundG2Peripheral: CBPeripheral?
-    @Published var g2Connected = false
-    @Published var bleState: String = "Initializing..."
-    
-    override init() {
-        super.init()
-        centralManager = CBCentralManager(delegate: self, queue: nil)
-    }
-    
-    func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        switch central.state {
-        case .poweredOn:
-            bleState = "Bluetooth ON — scanning..."
-            log.info("BLE powered on — starting debug scan")
-            
-            // First: check ALL connected peripherals across common services
-            let services: [CBUUID] = [
-                CBUUID(string: "00002760-08c2-11e1-9073-0e8ac72e0000"), // G2 custom
-                CBUUID(string: "180A"), // Device Info
-                CBUUID(string: "180F"), // Battery
-                CBUUID(string: "1800"), // Generic Access
-                CBUUID(string: "1801"), // Generic Attribute
-                CBUUID(string: "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"), // Nordic UART
-            ]
-            
-            for svc in services {
-                let connected = central.retrieveConnectedPeripherals(withServices: [svc])
-                for p in connected {
-                    let name = p.name ?? "(no name)"
-                    let entry = (name: name, uuid: p.identifier.uuidString)
-                    log.info("CONNECTED via \(svc.uuidString): '\(name)' [\(p.identifier.uuidString)]")
-                    if !connectedDevices.contains(where: { $0.uuid == entry.uuid }) {
-                        connectedDevices.append(entry)
-                    }
-                    // Check if this is a G2
-                    let lower = name.lowercased()
-                    if lower.contains("even g2") || lower.contains("pair_") || lower.contains("even") {
-                        DispatchQueue.main.async { self.foundG2Peripheral = p }
-                    }
-                }
-            }
-            
-            // Then: scan for ALL advertising peripherals
-            central.scanForPeripherals(withServices: nil, options: [
-                CBCentralManagerScanOptionAllowDuplicatesKey: false
-            ])
-            
-            // Stop scan after 10s
-            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
-                central.stopScan()
-                self?.bleState = "Scan complete — \(self?.discoveredDevices.count ?? 0) found, \(self?.connectedDevices.count ?? 0) connected"
-                log.info("Debug scan complete")
-            }
-            
-        case .poweredOff:
-            bleState = "Bluetooth OFF"
-        case .unauthorized:
-            bleState = "Bluetooth UNAUTHORIZED"
-        case .unsupported:
-            bleState = "BLE not supported"
-        default:
-            bleState = "BLE state: \(central.state.rawValue)"
-        }
-    }
-    
-    // Connect to a peripheral using THIS scanner's central manager
-    func connectToG2(_ peripheral: CBPeripheral) {
-        centralManager.stopScan()
-        peripheral.delegate = self
-        centralManager.connect(peripheral, options: nil)
-        log.info("Connecting to G2: '\(peripheral.name ?? "?")'")
-    }
-    
-    // Track connection success
-    func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        log.info("G2 CONNECTED: '\(peripheral.name ?? "?")'")
-        // Discover services to complete the connection
-        peripheral.discoverServices(nil)
-        DispatchQueue.main.async {
-            self.bleState = "CONNECTED: \(peripheral.name ?? "G2")"
-        }
-    }
-    
-    func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        log.error("G2 connect FAILED: \(error?.localizedDescription ?? "unknown")")
-        DispatchQueue.main.async {
-            self.bleState = "Connection failed"
-            self.foundG2Peripheral = nil
-        }
-    }
-    
-    func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
-        if let error {
-            log.error("Service discovery failed: \(error.localizedDescription)")
-            return
-        }
-        log.info("Services discovered: \(peripheral.services?.map { $0.uuid.uuidString } ?? [])")
-        DispatchQueue.main.async { self.g2Connected = true }
-    }
-    
-    func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
-                        advertisementData: [String: Any], rssi RSSI: NSNumber) {
-        let name = peripheral.name ?? "(no name)"
-        let services = (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID])?.map { $0.uuidString } ?? []
-        
-        log.info("ADVERTISING: '\(name)' RSSI=\(RSSI) services=\(services) uuid=\(peripheral.identifier.uuidString)")
-        
-        let entry = (name: name, uuid: peripheral.identifier.uuidString, rssi: RSSI.intValue)
-        if !discoveredDevices.contains(where: { $0.uuid == entry.uuid }) {
-            DispatchQueue.main.async {
-                self.discoveredDevices.append(entry)
-            }
-        }
-        // Check if this is a G2
-        let lower = name.lowercased()
-        if lower.contains("even g2") || lower.contains("pair_") || lower.contains("even") {
-            DispatchQueue.main.async { self.foundG2Peripheral = peripheral }
-        }
-    }
-}
-
 
 struct MainView: View {
-    @StateObject private var debugScanner = BLEDebugScanner()
     @ObservedObject var stateMachine: AppStateMachine
     @ObservedObject var g2Connector: G2AutoConnector
     @State private var showSettings = false
@@ -191,19 +55,6 @@ struct MainView: View {
             MatrixTheme.ScanlineOverlay()
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
-        }
-        .onChange(of: debugScanner.foundG2Peripheral) { _, peripheral in
-            guard let peripheral else { return }
-            // Scanner found G2 — connect using the SAME CBCentralManager that found it
-            debugScanner.connectToG2(peripheral)
-        }
-        .onChange(of: debugScanner.g2Connected) { _, connected in
-            if connected {
-                // G2 connected via debug scanner — update UI state
-                g2Connector.scanState = .connected
-                g2Connector.connectedDeviceName = debugScanner.foundG2Peripheral?.name ?? "Even G2"
-                stateMachine.glassesAvailable = true
-            }
         }
         .sheet(isPresented: $showSettings) {
             SettingsView(stateMachine: stateMachine, g2Connector: g2Connector)
@@ -296,36 +147,6 @@ struct MainView: View {
                     Text("SEARCHING...")
                         .font(MatrixTheme.fontCaption)
                         .foregroundStyle(MatrixTheme.dim)
-                    
-                    // BLE Debug Output
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(debugScanner.bleState)
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundStyle(MatrixTheme.amber)
-                        
-                        if !debugScanner.connectedDevices.isEmpty {
-                            Text("CONNECTED:")
-                                .font(.system(size: 9, design: .monospaced))
-                                .foregroundStyle(MatrixTheme.success)
-                            ForEach(Array(debugScanner.connectedDevices.enumerated()), id: \.1.uuid) { _, d in
-                                Text("  \(d.name)")
-                                    .font(.system(size: 8, design: .monospaced))
-                                    .foregroundStyle(MatrixTheme.success)
-                            }
-                        }
-                        
-                        if !debugScanner.discoveredDevices.isEmpty {
-                            Text("NEARBY (\(debugScanner.discoveredDevices.count)):")
-                                .font(.system(size: 9, design: .monospaced))
-                                .foregroundStyle(MatrixTheme.dim)
-                            ForEach(Array(debugScanner.discoveredDevices.prefix(8).enumerated()), id: \.1.uuid) { _, d in
-                                Text("  \(d.name) [\(d.rssi)]")
-                                    .font(.system(size: 8, design: .monospaced))
-                                    .foregroundStyle(MatrixTheme.dim)
-                            }
-                        }
-                    }
-                    .padding(.top, 16)
                 }
             } else {
                 VStack(spacing: 8) {

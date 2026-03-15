@@ -58,27 +58,53 @@ class G2BLEManager: NSObject {
 
     // MARK: - Init
 
+    /// Creates a G2BLEManager that owns its own CBCentralManager (standalone mode).
     override init() {
         super.init()
         centralManager = CBCentralManager(delegate: self, queue: DispatchQueue(label: "g2ble"))
     }
 
+    /// Creates a G2BLEManager that reuses an external CBCentralManager.
+    /// The caller is responsible for keeping the central manager alive and
+    /// must NOT set its delegate elsewhere after this call.
+    init(centralManager: CBCentralManager) {
+        super.init()
+        self.centralManager = centralManager
+    }
+
     // MARK: - Public API
 
-    /// Scan, connect, authenticate. Returns when fully connected or throws on failure.
-    /// Connect using a pre-discovered peripheral (skips scanning entirely)
+    /// Connect to a pre-discovered, already-connected peripheral.
+    /// Skips scanning entirely — discovers services, finds G2 characteristics,
+    /// subscribes to notifications, and runs the 7-packet auth handshake.
+    func connectToKnownPeripheral(_ peripheral: CBPeripheral) async throws {
+        log.info("Connecting to known peripheral: '\(peripheral.name ?? "?")'")
+        self.peripheral = peripheral
+        peripheral.delegate = self
+        state = .connecting
+
+        // Discover all services on this peripheral
+        peripheral.discoverServices(nil)
+
+        // Wait for characteristic discovery + auth to complete
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            self.connectContinuation = continuation
+        }
+    }
+
+    /// Connect using a pre-discovered peripheral via the central manager (needs explicit connect call).
     func connectToPeripheral(_ peripheral: CBPeripheral) async throws {
         log.info("Connecting to pre-found peripheral: '\(peripheral.name ?? "?")'")
         self.peripheral = peripheral
         peripheral.delegate = self
         state = .connecting
-        
+
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             self.connectContinuation = continuation
             self.centralManager.connect(peripheral, options: nil)
         }
     }
-    
+
     func connectToGlasses() async throws {
         // Wait up to 5 seconds for BLE to power on
         var waitAttempts = 0
