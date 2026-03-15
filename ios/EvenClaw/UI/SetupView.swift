@@ -3,6 +3,7 @@
 //
 // SetupView.swift
 // Multi-provider BYOK configuration. All keys stored in iOS Keychain.
+// Validation feedback with test connection and auto-proceed on success.
 
 import SwiftUI
 
@@ -12,7 +13,8 @@ struct SetupView: View {
 
     @State private var selectedProvider: AIProviderType = .openClaw
     @State private var isValidating = false
-    @State private var validationMessage = ""
+    @State private var isTesting = false
+    @State private var validationState: ValidationState = .none
 
     // OpenClaw
     @State private var openClawHost = ""
@@ -35,33 +37,59 @@ struct SetupView: View {
     @State private var customAPIKey = ""
     @State private var customModel = ""
 
+    enum ValidationState: Equatable {
+        case none
+        case testing
+        case success(String)
+        case failure(String)
+    }
+
     var body: some View {
         ZStack {
             MatrixTheme.background.ignoresSafeArea()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    // Title
-                    Text("AI PROVIDER SETUP")
-                        .font(MatrixTheme.fontHeading)
-                        .foregroundStyle(MatrixTheme.primary)
-                        .padding(.top)
+                    // Title with active provider indicator
+                    HStack {
+                        Text("AI PROVIDER SETUP")
+                            .font(MatrixTheme.fontHeading)
+                            .foregroundStyle(MatrixTheme.primary)
+                            .padding(.top)
 
-                    // Provider picker
-                    providerPicker
+                        Spacer()
 
-                    // Provider-specific fields
-                    providerFields
-
-                    // Validation message
-                    if !validationMessage.isEmpty {
-                        Text(validationMessage)
-                            .font(MatrixTheme.fontCaption)
-                            .foregroundStyle(validationMessage.contains("Error") ? MatrixTheme.error : MatrixTheme.success)
+                        if let saved = KeychainManager.load(.selectedProvider) {
+                            Text("Active: \(saved)")
+                                .font(MatrixTheme.fontCaption)
+                                .foregroundStyle(MatrixTheme.dim)
+                                .padding(.top)
+                        }
                     }
 
-                    // Save button
-                    HStack {
+                    providerPicker
+                    providerFields
+
+                    // Validation feedback
+                    validationFeedback
+
+                    // Buttons
+                    HStack(spacing: 12) {
+                        Button {
+                            testConnection()
+                        } label: {
+                            HStack {
+                                if isTesting {
+                                    ProgressView()
+                                        .tint(MatrixTheme.primary)
+                                        .scaleEffect(0.7)
+                                }
+                                Text("TEST")
+                            }
+                            .matrixOutlineButton()
+                        }
+                        .disabled(isTesting || isValidating)
+
                         Button {
                             saveAndValidate()
                         } label: {
@@ -75,7 +103,7 @@ struct SetupView: View {
                             }
                             .matrixButton()
                         }
-                        .disabled(isValidating)
+                        .disabled(isValidating || isTesting)
 
                         Spacer()
 
@@ -83,7 +111,8 @@ struct SetupView: View {
                             dismiss()
                         } label: {
                             Text("CANCEL")
-                                .matrixOutlineButton()
+                                .font(MatrixTheme.mono(12, weight: .semibold))
+                                .foregroundStyle(MatrixTheme.dim)
                         }
                     }
                 }
@@ -97,7 +126,66 @@ struct SetupView: View {
         .onAppear { loadSaved() }
     }
 
-    // MARK: - Provider Picker
+    // MARK: - Validation Feedback
+
+    @ViewBuilder
+    private var validationFeedback: some View {
+        switch validationState {
+        case .none:
+            EmptyView()
+        case .testing:
+            HStack(spacing: 8) {
+                ProgressView()
+                    .tint(MatrixTheme.primary)
+                    .scaleEffect(0.7)
+                Text("Testing connection...")
+                    .font(MatrixTheme.fontCaption)
+                    .foregroundStyle(MatrixTheme.primary)
+            }
+        case .success(let msg):
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(MatrixTheme.success)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("VALIDATED")
+                        .font(MatrixTheme.mono(13, weight: .bold))
+                        .foregroundStyle(MatrixTheme.success)
+                    Text(msg)
+                        .font(MatrixTheme.fontCaption)
+                        .foregroundStyle(MatrixTheme.success)
+                }
+            }
+            .padding(12)
+            .background(MatrixTheme.success.opacity(0.1))
+            .overlay(
+                Rectangle()
+                    .stroke(MatrixTheme.success.opacity(0.3), lineWidth: 1)
+            )
+        case .failure(let msg):
+            HStack(spacing: 8) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(MatrixTheme.error)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("FAILED")
+                        .font(MatrixTheme.mono(13, weight: .bold))
+                        .foregroundStyle(MatrixTheme.error)
+                    Text(msg)
+                        .font(MatrixTheme.fontCaption)
+                        .foregroundStyle(MatrixTheme.error)
+                }
+            }
+            .padding(12)
+            .background(MatrixTheme.error.opacity(0.1))
+            .overlay(
+                Rectangle()
+                    .stroke(MatrixTheme.error.opacity(0.3), lineWidth: 1)
+            )
+        }
+    }
+
+    // MARK: - Provider Picker with Icons
 
     private var providerPicker: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -109,21 +197,26 @@ struct SetupView: View {
                 ForEach(AIProviderType.allCases) { type in
                     Button {
                         selectedProvider = type
+                        validationState = .none
                     } label: {
-                        Text(type.rawValue)
-                            .font(MatrixTheme.mono(11, weight: .semibold))
-                            .foregroundStyle(
-                                selectedProvider == type ? MatrixTheme.background : MatrixTheme.primary
-                            )
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .background(
-                                selectedProvider == type ? MatrixTheme.primary : Color.clear
-                            )
-                            .overlay(
-                                Rectangle()
-                                    .stroke(MatrixTheme.border, lineWidth: 1)
-                            )
+                        HStack(spacing: 4) {
+                            Image(systemName: providerIcon(for: type))
+                                .font(.system(size: 10))
+                            Text(type.rawValue)
+                                .font(MatrixTheme.mono(11, weight: .semibold))
+                        }
+                        .foregroundStyle(
+                            selectedProvider == type ? MatrixTheme.background : MatrixTheme.primary
+                        )
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(
+                            selectedProvider == type ? MatrixTheme.primary : Color.clear
+                        )
+                        .overlay(
+                            Rectangle()
+                                .stroke(MatrixTheme.border, lineWidth: 1)
+                        )
                     }
                 }
             }
@@ -131,6 +224,16 @@ struct SetupView: View {
             Text(selectedProvider.description)
                 .font(MatrixTheme.fontCaption)
                 .foregroundStyle(MatrixTheme.dim)
+        }
+    }
+
+    private func providerIcon(for type: AIProviderType) -> String {
+        switch type {
+        case .openClaw: return "brain"
+        case .anthropic: return "bubble.left.fill"
+        case .openAI: return "circle.hexagongrid.fill"
+        case .gemini: return "sparkles"
+        case .custom: return "wrench.fill"
         }
     }
 
@@ -227,6 +330,33 @@ struct SetupView: View {
         }
     }
 
+    // MARK: - Test Connection
+
+    private func testConnection() {
+        isTesting = true
+        validationState = .testing
+
+        Task {
+            let provider = createProvider()
+            if let provider {
+                let valid = await provider.validate()
+                await MainActor.run {
+                    isTesting = false
+                    if valid {
+                        validationState = .success("Connected to \(selectedProvider.displayName)")
+                    } else {
+                        validationState = .failure("Authentication failed \u{2014} check credentials")
+                    }
+                }
+            } else {
+                await MainActor.run {
+                    isTesting = false
+                    validationState = .failure("Missing required fields")
+                }
+            }
+        }
+    }
+
     // MARK: - Save / Validate
 
     private func loadSaved() {
@@ -249,7 +379,7 @@ struct SetupView: View {
 
     private func saveAndValidate() {
         isValidating = true
-        validationMessage = ""
+        validationState = .testing
 
         // Save to keychain
         KeychainManager.save(selectedProvider.rawValue, for: .selectedProvider)
@@ -281,17 +411,21 @@ struct SetupView: View {
                 await MainActor.run {
                     isValidating = false
                     if valid {
-                        validationMessage = "Connected to \(selectedProvider.displayName)"
-                        onComplete(provider)
-                        dismiss()
+                        validationState = .success("Connected to \(selectedProvider.displayName)")
+                        // Auto-proceed after 1.5s delay to show VALIDATED
+                        Task {
+                            try? await Task.sleep(for: .seconds(1.5))
+                            onComplete(provider)
+                            dismiss()
+                        }
                     } else {
-                        validationMessage = "Error: Could not validate credentials"
+                        validationState = .failure("Could not validate \u{2014} check credentials and try again")
                     }
                 }
             } else {
                 await MainActor.run {
                     isValidating = false
-                    validationMessage = "Error: Missing required fields"
+                    validationState = .failure("Missing required fields")
                 }
             }
         }

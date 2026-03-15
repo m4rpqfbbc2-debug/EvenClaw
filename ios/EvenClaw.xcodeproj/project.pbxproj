@@ -36,6 +36,7 @@
 		A10027 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10027; };
 		A10028 /* KeychainManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10028; };
 		A10029 /* ConversationLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10029; };
+		A10030 /* G2AutoConnector.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10031; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -69,6 +70,7 @@
 		B10028 /* KeychainManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainManager.swift; sourceTree = "<group>"; };
 		B10029 /* ConversationLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationLogger.swift; sourceTree = "<group>"; };
 		B10030 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B10031 /* G2AutoConnector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = G2AutoConnector.swift; sourceTree = "<group>"; };
 		B10099 /* EvenClaw.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = EvenClaw.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -121,6 +123,7 @@
 				B10004 /* GestureController.swift */,
 				B10005 /* ConversationManager.swift */,
 				B10006 /* AudioCaptureManager.swift */,
+				B10031 /* G2AutoConnector.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -289,6 +292,7 @@
 				A10027 /* SettingsView.swift in Sources */,
 				A10028 /* KeychainManager.swift in Sources */,
 				A10029 /* ConversationLogger.swift in Sources */,
+				A10030 /* G2AutoConnector.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -419,7 +423,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = U3ZDS3R3ZZ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = EvenClaw/Info.plist;
@@ -448,7 +452,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = U3ZDS3R3ZZ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = EvenClaw/Info.plist;

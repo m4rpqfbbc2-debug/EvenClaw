@@ -2,7 +2,8 @@
 // Copyright 2026 XGX.ai. All rights reserved.
 //
 // AppStateMachine.swift
-// Port of reference/app.ts — state machine orchestrating G2, audio, AI, and HUD.
+// Port of reference/app.ts — state machine orchestrating audio, AI, and HUD.
+// Glasses-optional: conversation works on phone, HUD mirrors when G2 connected.
 
 import Foundation
 import Combine
@@ -24,13 +25,14 @@ final class AppStateMachine: ObservableObject {
     // MARK: - Published State
 
     @Published private(set) var state: AppState = .idle
-    @Published private(set) var isConnected = false
     @Published private(set) var statusText = ""
     @Published private(set) var currentTranscript = ""
     @Published private(set) var currentResponse = ""
     @Published private(set) var responseCharsVisible = 0
     @Published private(set) var animFrame = 0
     @Published private(set) var waveformLevels: [Float] = Array(repeating: 0, count: 8)
+    @Published private(set) var lastResponseTime: TimeInterval?
+    @Published var glassesAvailable = false
 
     // MARK: - Constants (from app.ts)
 
@@ -41,7 +43,7 @@ final class AppStateMachine: ObservableObject {
     // MARK: - Conversation
 
     private(set) var chatHistory: [(role: String, content: String)] = []
-    private(set) var responseHistory: [(user: String, assistant: String)] = []
+    @Published private(set) var responseHistory: [(user: String, assistant: String)] = []
     private(set) var responseHistoryIndex = -1
 
     private var inConversation = false
@@ -50,7 +52,16 @@ final class AppStateMachine: ObservableObject {
 
     // MARK: - Dependencies
 
-    private var glasses: EvenG2Provider?
+    var glasses: EvenG2Provider? {
+        didSet {
+            guard let glasses else { return }
+            glasses.onGesture = { [weak self] gesture in
+                Task { @MainActor in
+                    self?.handleGesture(gesture)
+                }
+            }
+        }
+    }
     private let audioCapture = AudioCaptureManager()
     private let transcription = TranscriptionService()
     private var aiProvider: (any AIProvider)?
@@ -73,44 +84,57 @@ final class AppStateMachine: ObservableObject {
 
     // MARK: - Public API
 
+    var providerName: String {
+        aiProvider?.name ?? "No provider"
+    }
+
+    var modelName: String {
+        aiProvider?.modelName ?? "—"
+    }
+
     func setAIProvider(_ provider: any AIProvider) {
         aiProvider = provider
     }
 
-    func connectGlasses() async {
-        let provider = EvenG2Provider()
-        glasses = provider
-
-        provider.onGesture = { [weak self] gesture in
-            Task { @MainActor in
-                self?.handleGesture(gesture)
-            }
-        }
-
-        provider.onConnectionStateChanged = { [weak self] connState in
-            Task { @MainActor in
-                self?.isConnected = (connState == .connected)
-            }
-        }
-
-        do {
-            try await provider.connect()
-            isConnected = true
-            log.info("G2 connected — entering idle")
-            await goIdle()
-        } catch {
-            log.error("G2 connection failed: \(error.localizedDescription)")
-            statusText = "Connection failed: \(error.localizedDescription)"
-            isConnected = false
+    /// Phone mic button: same as slide-forward on glasses.
+    func phoneMicActivate() {
+        switch state {
+        case .idle:
+            inConversation = true
+            Task { await startListening() }
+        case .conversationReady:
+            Task { await startListening() }
+        case .response:
+            Task { await startListening() }
+        default:
+            break
         }
     }
 
-    func disconnectGlasses() {
-        glasses?.disconnect()
-        glasses = nil
-        isConnected = false
-        cancelAllTasks()
-        state = .idle
+    /// Phone send button: same as double-tap on glasses.
+    func phoneSend() {
+        switch state {
+        case .listening:
+            audioCapture.forceSend()
+        case .response:
+            Task { await goConversationReady() }
+        case .conversationReady:
+            Task { await startListening() }
+        default:
+            break
+        }
+    }
+
+    /// Phone dismiss: same as single tap.
+    func phoneDismiss() {
+        switch state {
+        case .response:
+            Task { await goConversationReady() }
+        case .conversationReady:
+            Task { await goIdle() }
+        default:
+            break
+        }
     }
 
     // MARK: - State Transitions
@@ -119,10 +143,9 @@ final class AppStateMachine: ObservableObject {
         cancelAllTasks()
         inConversation = false
         chatHistory.removeAll()
-        responseHistory.removeAll()
         responseHistoryIndex = -1
         state = .idle
-        statusText = "SLIDE FORWARD TO START"
+        statusText = "TAP MIC TO START"
         currentTranscript = ""
         currentResponse = ""
         responseCharsVisible = 0
@@ -134,7 +157,9 @@ final class AppStateMachine: ObservableObject {
     private func goConversationReady() async {
         cancelAllTasks()
         state = .conversationReady
-        statusText = "▸ SLIDE TO SPEAK / TAP TO END"
+        statusText = glassesAvailable
+            ? "▸ SLIDE TO SPEAK / TAP TO END"
+            : "▸ TAP MIC TO SPEAK"
         audioCapture.stopRecording()
         await displayOnHUD("▸ SLIDE TO SPEAK\n\nTAP TO END")
 
@@ -150,7 +175,9 @@ final class AppStateMachine: ObservableObject {
     private func startListening() async {
         cancelAllTasks()
         state = .listening
-        statusText = "● REC — DOUBLE TAP TO SEND"
+        statusText = glassesAvailable
+            ? "● REC — DOUBLE TAP TO SEND"
+            : "● REC — TAP MIC TO SEND"
         currentTranscript = ""
         currentResponse = ""
 
@@ -196,6 +223,7 @@ final class AppStateMachine: ObservableObject {
         state = .processing
         statusText = "Processing..."
         audioCapture.stopRecording()
+        let requestStart = Date()
 
         // Show spinner
         let spinnerFrames = ["◐", "◑", "◒", "◓"]
@@ -259,7 +287,9 @@ final class AppStateMachine: ObservableObject {
 
             let history = chatHistory.map { AIMessage(role: $0.role, content: $0.content) }
             let response = try await provider.sendMessage(prompt: transcript, history: history)
-            log.info("AI response (\(response.count) chars)")
+            let elapsed = Date().timeIntervalSince(requestStart)
+            lastResponseTime = elapsed
+            log.info("AI response (\(response.count) chars) in \(String(format: "%.1f", elapsed))s")
 
             guard !response.isEmpty,
                   response != "No response from AI.",
@@ -281,8 +311,8 @@ final class AppStateMachine: ObservableObject {
             responseHistoryIndex = -1
 
             // Log the exchange
-            let providerName = String(describing: type(of: provider))
-            ConversationLogger.shared.logExchange(user: transcript, assistant: response, provider: providerName)
+            let providerDesc = String(describing: type(of: provider))
+            ConversationLogger.shared.logExchange(user: transcript, assistant: response, provider: providerDesc)
 
             // Show response with typewriter
             cancelAllTasks()
@@ -303,7 +333,9 @@ final class AppStateMachine: ObservableObject {
         currentResponse = text
         responseScrollOffset = 0
         inConversation = true
-        statusText = "AISHA — tap/double-tap to continue"
+        statusText = glassesAvailable
+            ? "AISHA — tap/double-tap to continue"
+            : "AISHA — tap mic for next"
 
         // Typewriter effect
         typewriterTask = Task {
@@ -333,24 +365,21 @@ final class AppStateMachine: ObservableObject {
 
         switch gesture {
 
-        // SLIDE FORWARD (swipeForward) — primary activation
+        // SLIDE FORWARD — primary activation
         case .swipeForward:
             switch state {
             case .idle:
-                log.info("Slide forward — starting conversation")
                 inConversation = true
                 Task { await startListening() }
             case .conversationReady:
-                log.info("Slide forward — recording next message")
                 Task { await startListening() }
             case .response:
-                log.info("Slide forward — dismiss + record next")
                 Task { await startListening() }
             default:
                 break
             }
 
-        // SLIDE BACK (swipeBackward) — scroll response history
+        // SLIDE BACK — scroll response history
         case .swipeBackward:
             if state == .response {
                 scrollResponseBack()
@@ -360,13 +389,10 @@ final class AppStateMachine: ObservableObject {
         case .doubleTap:
             switch state {
             case .listening:
-                log.info("Double-tap — sending recording")
                 audioCapture.forceSend()
             case .response:
-                log.info("Double-tap — dismiss, conversation ready")
                 Task { await goConversationReady() }
             case .conversationReady:
-                log.info("Double-tap — recording next message")
                 Task { await startListening() }
             default:
                 break
@@ -376,10 +402,8 @@ final class AppStateMachine: ObservableObject {
         case .tap:
             switch state {
             case .response:
-                log.info("Tap — dismiss, conversation ready")
                 Task { await goConversationReady() }
             case .conversationReady:
-                log.info("Tap — ending conversation")
                 Task { await goIdle() }
             default:
                 break
@@ -393,7 +417,6 @@ final class AppStateMachine: ObservableObject {
     // MARK: - Response Scrolling
 
     private func scrollResponseBack() {
-        // Scroll within current response or go to previous exchange
         if responseHistoryIndex < responseHistory.count - 1 {
             responseHistoryIndex += 1
             let prev = responseHistory[responseHistory.count - 1 - responseHistoryIndex]
@@ -402,14 +425,13 @@ final class AppStateMachine: ObservableObject {
             currentResponse = text
             responseCharsVisible = text.count
             Task { await displayOnHUD("AISHA:\n\(text)") }
-            log.debug("Previous exchange (\(self.responseHistoryIndex + 1) back)")
         }
     }
 
     // MARK: - HUD Display
 
     private func displayOnHUD(_ text: String) async {
-        guard let glasses else { return }
+        guard glassesAvailable, let glasses else { return }
         do {
             try await glasses.displayText(text, style: DisplayStyle())
         } catch {

@@ -72,7 +72,7 @@ class G2BLEManager: NSObject {
             try await Task.sleep(nanoseconds: 1_000_000_000)
             guard centralManager.state == .poweredOn else {
                 state = .error("Bluetooth is not available")
-                throw G2Error.bleUnavailable
+                throw G2Error.bleNotReady
             }
         }
 

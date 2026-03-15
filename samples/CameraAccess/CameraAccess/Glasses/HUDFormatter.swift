@@ -82,6 +82,21 @@ struct HUDFormatter {
         return truncate(clean, to: maxChars)
     }
 
+    // MARK: - Boot Sequence
+
+    static let bootLines = [
+        "EVENCLAW v5.1",
+        "XGX.ai",
+        "G2 PROTOCOL INIT",
+        "GESTURE MODE ACTIVE",
+        "READY"
+    ]
+
+    static func bootFrame(_ frame: Int) -> String {
+        let count = min(frame, bootLines.count)
+        return bootLines.prefix(count).joined(separator: "\n")
+    }
+
     // MARK: - Markdown Stripping
 
     /// Remove common markdown formatting from text.

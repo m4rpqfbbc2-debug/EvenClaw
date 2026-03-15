@@ -2,7 +2,7 @@
 // Copyright 2026 XGX.ai. All rights reserved.
 //
 // OpenClawProvider.swift
-// OpenClaw gateway integration — local or remote server with /api/chat endpoint.
+// OpenClaw gateway integration — connects to /v1/chat/completions endpoint.
 
 import Foundation
 import os.log
@@ -18,8 +18,8 @@ final class OpenClawProvider: AIProvider, @unchecked Sendable {
     private let token: String
 
     init(host: String, token: String) {
-        self.host = host.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        self.token = token
+        self.host = host.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        self.token = token.trimmingCharacters(in: .whitespacesAndNewlines)
         self.modelName = "OpenClaw"
     }
 
@@ -31,7 +31,7 @@ final class OpenClawProvider: AIProvider, @unchecked Sendable {
     }
 
     func sendMessage(prompt: String, history: [AIMessage]) async throws -> String {
-        let url = URL(string: "\(host)/api/chat")!
+        let url = URL(string: "\(host)/v1/chat/completions")!
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -42,9 +42,17 @@ final class OpenClawProvider: AIProvider, @unchecked Sendable {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
 
+        var messages: [[String: String]] = [
+            ["role": "system", "content": "You are Aisha, an AI assistant speaking through Even Realities G2 smart glasses. Keep responses concise (under 400 characters when possible) since they display on a tiny HUD. Be helpful, direct, and conversational."]
+        ]
+        for msg in history {
+            messages.append(["role": msg.role, "content": msg.content])
+        }
+        messages.append(["role": "user", "content": prompt])
+
         let body: [String: Any] = [
-            "message": prompt,
-            "history": history.map { ["role": $0.role, "content": $0.content] }
+            "messages": messages,
+            "stream": false
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
@@ -58,28 +66,48 @@ final class OpenClawProvider: AIProvider, @unchecked Sendable {
 
         guard httpResponse.statusCode == 200 else {
             let errorText = String(data: data, encoding: .utf8) ?? "unknown"
+            log.error("OpenClaw error \(httpResponse.statusCode): \(errorText)")
             throw AIProviderError.httpError(httpResponse.statusCode, errorText)
         }
 
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let responseText = json["response"] as? String else {
+              let choices = json["choices"] as? [[String: Any]],
+              let first = choices.first,
+              let message = first["message"] as? [String: Any],
+              let content = message["content"] as? String else {
             throw AIProviderError.invalidResponse
         }
 
-        return responseText.isEmpty ? "No response received." : responseText
+        return content.isEmpty ? "No response received." : content
     }
 
     func validate() async -> Bool {
-        guard let url = URL(string: "\(host)/api/health") else { return false }
+        // Test with a simple chat completion
+        guard let url = URL(string: "\(host)/v1/chat/completions") else { return false }
         var request = URLRequest(url: url)
-        request.timeoutInterval = 5
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 10
+
+        if !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        let body: [String: Any] = [
+            "messages": [["role": "user", "content": "ping"]],
+            "stream": false
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               json["status"] as? String == "ok" {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse,
+               httpResponse.statusCode == 200 {
                 return true
             }
-        } catch {}
+        } catch {
+            log.error("Validation failed: \(error.localizedDescription)")
+        }
         return false
     }
 }

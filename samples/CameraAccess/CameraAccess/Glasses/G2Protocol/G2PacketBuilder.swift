@@ -274,6 +274,121 @@ struct G2PacketBuilder {
         return buildPacket(seq: seq, service: G2Constants.Service.displayWake, payload: payload)
     }
 
+    // MARK: - Even AI Protocol (0x07-20)
+
+    /// Build CTRL(ENTER) — enter Even AI mode
+    static func buildEvenAIEnter(seq: UInt8, magic: UInt8) -> Data {
+        // commandId=1 (CTRL), magic, ctrl{status=2 (ENTER)}
+        var payload = Data()
+        payload.append(0x08); payload.append(0x01)  // field 1 = commandId = 1 (CTRL)
+        payload.append(0x10); payload.append(magic)  // field 2 = magic
+        // field 3 = ctrl message: {status = 2 (ENTER)}
+        payload.append(0x1A); payload.append(0x02)   // field 3, length 2
+        payload.append(0x08); payload.append(0x02)   // status = 2 (ENTER)
+        return buildPacket(seq: seq, service: (0x07, 0x20), payload: payload)
+    }
+
+    /// Build CTRL(EXIT) — exit Even AI mode
+    static func buildEvenAIExit(seq: UInt8, magic: UInt8) -> Data {
+        var payload = Data()
+        payload.append(0x08); payload.append(0x01)
+        payload.append(0x10); payload.append(magic)
+        payload.append(0x1A); payload.append(0x02)
+        payload.append(0x08); payload.append(0x03)  // status = 3 (EXIT)
+        return buildPacket(seq: seq, service: (0x07, 0x20), payload: payload)
+    }
+
+    /// Build ASK — display question on HUD
+    static func buildEvenAIAsk(seq: UInt8, magic: UInt8, text: String) -> Data {
+        let textData = Data(text.utf8)
+        var askInfo = Data()
+        // field 4 = text (tag 0x22)
+        askInfo.append(0x22)
+        askInfo.append(contentsOf: encodeVarint(textData.count))
+        askInfo.append(textData)
+
+        var payload = Data()
+        payload.append(0x08); payload.append(0x03)  // commandId = 3 (ASK)
+        payload.append(0x10); payload.append(magic)
+        // field 5 = askInfo (tag 0x2A)
+        payload.append(0x2A)
+        payload.append(contentsOf: encodeVarint(askInfo.count))
+        payload.append(askInfo)
+        return buildPacket(seq: seq, service: (0x07, 0x20), payload: payload)
+    }
+
+    /// Build REPLY — display answer on HUD (single, non-streaming)
+    static func buildEvenAIReply(seq: UInt8, magic: UInt8, text: String) -> Data {
+        let textData = Data(text.utf8)
+        var replyInfo = Data()
+        replyInfo.append(0x22)
+        replyInfo.append(contentsOf: encodeVarint(textData.count))
+        replyInfo.append(textData)
+
+        var payload = Data()
+        payload.append(0x08); payload.append(0x05)  // commandId = 5 (REPLY)
+        payload.append(0x10); payload.append(magic)
+        // field 7 = replyInfo (tag 0x3A)
+        payload.append(0x3A)
+        payload.append(contentsOf: encodeVarint(replyInfo.count))
+        payload.append(replyInfo)
+        return buildPacket(seq: seq, service: (0x07, 0x20), payload: payload)
+    }
+
+    /// Build REPLY stream start
+    static func buildEvenAIReplyStreamStart(seq: UInt8, magic: UInt8) -> Data {
+        var replyInfo = Data()
+        replyInfo.append(0x08); replyInfo.append(0x01)  // type = 1 (stream start)
+
+        var payload = Data()
+        payload.append(0x08); payload.append(0x05)
+        payload.append(0x10); payload.append(magic)
+        payload.append(0x3A)
+        payload.append(contentsOf: encodeVarint(replyInfo.count))
+        payload.append(replyInfo)
+        return buildPacket(seq: seq, service: (0x07, 0x20), payload: payload)
+    }
+
+    /// Build REPLY stream chunk
+    static func buildEvenAIReplyStreamChunk(seq: UInt8, magic: UInt8, cmdCnt: Int, text: String) -> Data {
+        let textData = Data(text.utf8)
+        var replyInfo = Data()
+        replyInfo.append(0x08); replyInfo.append(0x02)  // type = 2 (stream chunk)
+        replyInfo.append(0x10)
+        replyInfo.append(contentsOf: encodeVarint(cmdCnt))
+        replyInfo.append(0x22)
+        replyInfo.append(contentsOf: encodeVarint(textData.count))
+        replyInfo.append(textData)
+
+        var payload = Data()
+        payload.append(0x08); payload.append(0x05)
+        payload.append(0x10); payload.append(magic)
+        payload.append(0x3A)
+        payload.append(contentsOf: encodeVarint(replyInfo.count))
+        payload.append(replyInfo)
+        return buildPacket(seq: seq, service: (0x07, 0x20), payload: payload)
+    }
+
+    /// Build REPLY stream end (final chunk)
+    static func buildEvenAIReplyStreamEnd(seq: UInt8, magic: UInt8, cmdCnt: Int, text: String) -> Data {
+        let textData = Data(text.utf8)
+        var replyInfo = Data()
+        replyInfo.append(0x08); replyInfo.append(0x03)  // type = 3 (stream end)
+        replyInfo.append(0x10)
+        replyInfo.append(contentsOf: encodeVarint(cmdCnt))
+        replyInfo.append(0x22)
+        replyInfo.append(contentsOf: encodeVarint(textData.count))
+        replyInfo.append(textData)
+
+        var payload = Data()
+        payload.append(0x08); payload.append(0x05)
+        payload.append(0x10); payload.append(magic)
+        payload.append(0x3A)
+        payload.append(contentsOf: encodeVarint(replyInfo.count))
+        payload.append(replyInfo)
+        return buildPacket(seq: seq, service: (0x07, 0x20), payload: payload)
+    }
+
     // MARK: - Helpers
 
     /// Add CRC to a pre-built packet (payload starts at byte 8).

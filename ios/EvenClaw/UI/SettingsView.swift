@@ -2,13 +2,14 @@
 // Copyright 2026 XGX.ai. All rights reserved.
 //
 // SettingsView.swift
-// Grouped settings panel.
+// Grouped settings panel with G2 auto-connector integration.
 
 import SwiftUI
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var stateMachine: AppStateMachine
+    @ObservedObject var g2Connector: G2AutoConnector
     @State private var showSetup = false
     @State private var showClearConfirm = false
 
@@ -34,22 +35,30 @@ struct SettingsView: View {
                     }
                     .padding(.top)
 
-                    // Connection section
-                    settingsSection("CONNECTION") {
-                        settingsRow("G2 Status", value: stateMachine.isConnected ? "Connected" : "Disconnected")
+                    // G2 Connection section
+                    settingsSection("G2 GLASSES") {
+                        HStack {
+                            G2StatusIndicator(scanState: g2Connector.scanState)
+                            Spacer()
+                            if let name = g2Connector.connectedDeviceName {
+                                Text(name)
+                                    .font(MatrixTheme.fontTerminal)
+                                    .foregroundStyle(MatrixTheme.primary)
+                            }
+                        }
 
-                        if stateMachine.isConnected {
+                        if g2Connector.isConnected {
                             Button {
-                                stateMachine.disconnectGlasses()
+                                g2Connector.disconnect()
                             } label: {
                                 Text("DISCONNECT")
                                     .matrixOutlineButton()
                             }
                         } else {
                             Button {
-                                Task { await stateMachine.connectGlasses() }
+                                g2Connector.retryNow()
                             } label: {
-                                Text("CONNECT G2")
+                                Text("SCAN FOR G2")
                                     .matrixButton()
                             }
                         }
@@ -57,8 +66,8 @@ struct SettingsView: View {
 
                     // AI Provider section
                     settingsSection("AI PROVIDER") {
-                        let providerName = KeychainManager.load(.selectedProvider) ?? "Not configured"
-                        settingsRow("Provider", value: providerName)
+                        settingsRow("Provider", value: KeychainManager.load(.selectedProvider) ?? "Not configured")
+                        settingsRow("Model", value: stateMachine.modelName)
 
                         Button {
                             showSetup = true

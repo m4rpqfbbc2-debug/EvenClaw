@@ -134,3 +134,67 @@ struct GlowingText: View {
             }
     }
 }
+
+// MARK: - G2 Glasses Icon
+
+struct G2GlassesIcon: View {
+    let size: CGFloat
+    let connected: Bool
+    @State private var glowing = false
+
+    var body: some View {
+        Image(systemName: "eyeglasses")
+            .font(.system(size: size, weight: .medium))
+            .foregroundStyle(connected ? MatrixTheme.success : MatrixTheme.primary)
+            .shadow(color: (connected ? MatrixTheme.success : MatrixTheme.primary).opacity(glowing ? 0.9 : 0.3), radius: glowing ? 30 : 10)
+            .shadow(color: (connected ? MatrixTheme.success : MatrixTheme.primary).opacity(glowing ? 0.5 : 0.1), radius: glowing ? 50 : 20)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) {
+                    glowing = true
+                }
+            }
+    }
+}
+
+// MARK: - Scanning Pulse
+
+struct ScanningPulse: View {
+    @State private var scale: CGFloat = 0.8
+    @State private var opacity: Double = 0.6
+
+    var body: some View {
+        Circle()
+            .stroke(MatrixTheme.primary.opacity(opacity), lineWidth: 1.5)
+            .frame(width: 120, height: 120)
+            .scaleEffect(scale)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+                    scale = 1.3
+                    opacity = 0.0
+                }
+            }
+    }
+}
+
+// MARK: - Pixel Reveal Text
+
+struct PixelRevealText: View {
+    let text: String
+    let font: Font
+    @State private var revealed = false
+
+    var body: some View {
+        Text(text)
+            .font(font)
+            .foregroundStyle(MatrixTheme.primary)
+            .shadow(color: MatrixTheme.primary.opacity(0.5), radius: 12)
+            .opacity(revealed ? 1 : 0)
+            .blur(radius: revealed ? 0 : 8)
+            .scaleEffect(revealed ? 1 : 0.9)
+            .onAppear {
+                withAnimation(.easeOut(duration: 1.2).delay(0.3)) {
+                    revealed = true
+                }
+            }
+    }
+}
