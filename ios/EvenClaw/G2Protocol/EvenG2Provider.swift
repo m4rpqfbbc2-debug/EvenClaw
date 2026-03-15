@@ -70,6 +70,20 @@ class EvenG2Provider: NSObject, GlassesProvider {
 
     // MARK: - GlassesProvider
 
+    /// Connect using a pre-discovered peripheral (skips BLE scanning)
+    func connect(peripheral: CBPeripheral) async throws {
+        connectionState = .connecting
+        log.info("Connecting to pre-found G2...")
+        do {
+            try await bleManager.connectToPeripheral(peripheral)
+            connectionState = .connected
+            log.info("Even G2 connected via pre-found peripheral")
+        } catch {
+            connectionState = .error(error.localizedDescription)
+            throw error
+        }
+    }
+    
     func connect() async throws {
         connectionState = .connecting
         log.info("Connecting to Even G2...")

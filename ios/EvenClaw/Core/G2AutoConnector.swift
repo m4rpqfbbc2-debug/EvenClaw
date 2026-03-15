@@ -2,8 +2,8 @@
 // Copyright 2026 XGX.ai. All rights reserved.
 //
 // G2AutoConnector.swift
-// Background BLE scanner for Even G2 glasses. Scans, auto-connects, and
-// reconnects with exponential backoff. Never blocks UI.
+// Background BLE scanner for Even G2 glasses. Uses its own CBCentralManager
+// to find glasses, then hands off to EvenG2Provider for protocol handling.
 
 import Foundation
 import CoreBluetooth
@@ -13,9 +13,7 @@ import os.log
 private let log = Logger(subsystem: "ai.xgx.evenclaw", category: "G2AutoConnect")
 
 @MainActor
-final class G2AutoConnector: ObservableObject {
-
-    // MARK: - Published State
+final class G2AutoConnector: NSObject, ObservableObject {
 
     enum ScanState: Equatable {
         case idle
@@ -27,145 +25,236 @@ final class G2AutoConnector: ObservableObject {
         case unauthorized
     }
 
-    @Published private(set) var scanState: ScanState = .idle
-    @Published private(set) var connectedDeviceName: String?
+    @Published var scanState: ScanState = .idle
+    @Published var connectedDeviceName: String?
+    @Published var discoveredDeviceNames: [String] = []
 
-    /// The active glasses provider — nil when not connected.
-    private(set) var glassesProvider: EvenG2Provider?
-
-    /// Callback when glasses connect/disconnect.
+    var glassesProvider: EvenG2Provider?
     var onGlassesAvailabilityChanged: ((Bool) -> Void)?
 
-    // MARK: - Reconnect Config
-
-    private let baseReconnectDelay: TimeInterval = 1.0
-    private let maxReconnectDelay: TimeInterval = 30.0
+    private var centralManager: CBCentralManager!
+    private let bleQueue = DispatchQueue(label: "g2autoconnect.ble")
+    private var foundPeripheral: CBPeripheral?
+    private var isActive = false
     private var reconnectAttempt = 0
     private var reconnectTask: Task<Void, Never>?
-    private var scanTask: Task<Void, Never>?
-    private var isActive = false
+    private let maxReconnectDelay: TimeInterval = 30.0
 
-    // MARK: - Public API
+    override init() {
+        super.init()
+        // Create CBCentralManager immediately to trigger Bluetooth permission
+        centralManager = CBCentralManager(delegate: nil, queue: bleQueue)
+    }
 
-    /// Start background scanning for G2 glasses. Safe to call multiple times.
     func startScanning() {
         guard !isActive else { return }
         isActive = true
         reconnectAttempt = 0
-        log.info("G2 auto-connector starting")
-        attemptConnection()
+        scanState = .scanning
+        log.info("Starting G2 scan")
+        
+        // Set delegate on the ble queue
+        bleQueue.async { [weak self] in
+            self?.centralManager.delegate = self
+            // If already powered on, start scanning immediately
+            if self?.centralManager.state == .poweredOn {
+                self?.doScan()
+            }
+        }
     }
 
-    /// Stop scanning and disconnect.
     func stop() {
         isActive = false
-        scanTask?.cancel()
-        scanTask = nil
         reconnectTask?.cancel()
-        reconnectTask = nil
+        bleQueue.async { [weak self] in
+            self?.centralManager.stopScan()
+        }
         disconnect()
         scanState = .idle
-        log.info("G2 auto-connector stopped")
     }
 
-    /// Manually trigger a reconnect attempt.
     func retryNow() {
         reconnectAttempt = 0
         reconnectTask?.cancel()
-        reconnectTask = nil
-        attemptConnection()
+        scanState = .scanning
+        bleQueue.async { [weak self] in
+            self?.doScan()
+        }
     }
 
-    /// Disconnect glasses (user-initiated or internal).
     func disconnect() {
         glassesProvider?.disconnect()
         glassesProvider = nil
         connectedDeviceName = nil
-        if scanState == .connected {
-            scanState = .idle
-        }
+        foundPeripheral = nil
         onGlassesAvailabilityChanged?(false)
     }
 
-    var isConnected: Bool {
-        scanState == .connected
-    }
+    var isConnected: Bool { scanState == .connected }
 
-    // MARK: - Connection Logic
+    // MARK: - Internal scan logic (runs on bleQueue)
 
-    private func attemptConnection() {
-        scanTask?.cancel()
-        scanTask = Task { [weak self] in
-            guard let self, self.isActive else { return }
-
-            self.scanState = self.reconnectAttempt > 0
-                ? .reconnecting(attempt: self.reconnectAttempt)
-                : .scanning
-
-            let provider = EvenG2Provider()
-
-            provider.onConnectionStateChanged = { [weak self] connState in
-                Task { @MainActor in
-                    self?.handleConnectionStateChange(connState)
+    private func doScan() {
+        guard isActive, centralManager.state == .poweredOn else { return }
+        
+        log.info("Scanning for G2 glasses...")
+        
+        // Step 1: Check already-connected peripherals (most reliable for paired G2)
+        let serviceUUIDs: [CBUUID] = [
+            CBUUID(string: "00002760-08c2-11e1-9073-0e8ac72e0000"), // G2 custom
+            CBUUID(string: "180A"), // Device Info
+            CBUUID(string: "180F"), // Battery
+            CBUUID(string: "1800"), // Generic Access
+            CBUUID(string: "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"), // Nordic UART
+        ]
+        
+        for svcUUID in serviceUUIDs {
+            let connected = centralManager.retrieveConnectedPeripherals(withServices: [svcUUID])
+            for p in connected {
+                let name = p.name ?? ""
+                log.info("Found connected: '\(name)' via \(svcUUID.uuidString)")
+                
+                DispatchQueue.main.async { [weak self] in
+                    if !name.isEmpty && !(self?.discoveredDeviceNames.contains(name) ?? true) {
+                        self?.discoveredDeviceNames.append(name)
+                    }
                 }
-            }
-
-            do {
-                try await provider.connect()
-                guard !Task.isCancelled, self.isActive else {
-                    provider.disconnect()
+                
+                if isG2(name: name) {
+                    log.info("G2 found (connected): '\(name)' — connecting")
+                    foundPeripheral = p
+                    connectToFoundGlasses(peripheral: p, name: name)
                     return
                 }
-                self.glassesProvider = provider
-                self.connectedDeviceName = "Even G2"
-                self.scanState = .connected
-                self.reconnectAttempt = 0
-                self.onGlassesAvailabilityChanged?(true)
-                log.info("G2 auto-connected successfully")
-            } catch {
-                guard !Task.isCancelled, self.isActive else { return }
-                log.warning("G2 connection attempt failed: \(error.localizedDescription)")
-                self.scheduleReconnect()
             }
+        }
+        
+        // Step 2: Scan for advertising peripherals
+        centralManager.scanForPeripherals(
+            withServices: nil,
+            options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
+        )
+        
+        // Timeout after 30s
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+            guard let self, self.isActive, self.scanState == .scanning else { return }
+            self.bleQueue.async {
+                self.centralManager.stopScan()
+            }
+            self.scheduleReconnect()
         }
     }
 
-    private func handleConnectionStateChange(_ connState: GlassesConnectionState) {
-        switch connState {
-        case .disconnected:
-            guard isActive, scanState == .connected else { return }
-            log.info("G2 disconnected — scheduling reconnect")
-            glassesProvider = nil
-            connectedDeviceName = nil
-            onGlassesAvailabilityChanged?(false)
-            scheduleReconnect()
-        case .error(let msg):
-            guard isActive else { return }
-            log.error("G2 connection error: \(msg)")
-            glassesProvider = nil
-            connectedDeviceName = nil
-            onGlassesAvailabilityChanged?(false)
-            scheduleReconnect()
-        default:
-            break
+    private func isG2(name: String) -> Bool {
+        let lower = name.lowercased()
+        return lower.hasPrefix("even g2") ||
+               lower.hasPrefix("even_g2") ||
+               lower.hasPrefix("pair_") ||
+               lower.hasPrefix("even ") ||
+               lower.contains("g2") ||
+               lower.contains("even")
+    }
+
+    private func connectToFoundGlasses(peripheral: CBPeripheral, name: String) {
+        centralManager.stopScan()
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.scanState = .connecting
+            self.connectedDeviceName = name
+            
+            // Create EvenG2Provider and connect using the found peripheral
+            let provider = EvenG2Provider()
+            self.glassesProvider = provider
+            
+            Task {
+                do {
+                    try await provider.connect()
+                    self.scanState = .connected
+                    self.reconnectAttempt = 0
+                    self.onGlassesAvailabilityChanged?(true)
+                    log.info("G2 connected: \(name)")
+                } catch {
+                    log.error("G2 connection failed: \(error.localizedDescription)")
+                    self.glassesProvider = nil
+                    self.scheduleReconnect()
+                }
+            }
         }
     }
 
     private func scheduleReconnect() {
         guard isActive else { return }
         reconnectAttempt += 1
-        let delay = min(
-            baseReconnectDelay * pow(2.0, Double(reconnectAttempt - 1)),
-            maxReconnectDelay
-        )
-        scanState = .reconnecting(attempt: reconnectAttempt)
-        log.info("Reconnect attempt \(self.reconnectAttempt) in \(delay)s")
-
-        reconnectTask?.cancel()
-        reconnectTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(delay))
-            guard let self, !Task.isCancelled, self.isActive else { return }
-            self.attemptConnection()
+        let delay = min(pow(2.0, Double(reconnectAttempt - 1)), maxReconnectDelay)
+        
+        DispatchQueue.main.async { [weak self] in
+            self?.scanState = .reconnecting(attempt: self?.reconnectAttempt ?? 0)
         }
+        
+        log.info("Reconnect in \(delay)s (attempt \(self.reconnectAttempt))")
+        reconnectTask?.cancel()
+        reconnectTask = Task {
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled, self.isActive else { return }
+            self.bleQueue.async { [weak self] in
+                self?.doScan()
+            }
+        }
+    }
+}
+
+// MARK: - CBCentralManagerDelegate
+
+extension G2AutoConnector: CBCentralManagerDelegate {
+    nonisolated func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        let state = central.state
+        log.info("BLE state: \(state.rawValue)")
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            switch state {
+            case .poweredOn:
+                if self.isActive && self.scanState == .scanning {
+                    self.bleQueue.async { self.doScan() }
+                }
+            case .poweredOff:
+                self.scanState = .bluetoothOff
+            case .unauthorized:
+                self.scanState = .unauthorized
+            default:
+                break
+            }
+        }
+    }
+
+    nonisolated func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
+                                     advertisementData: [String: Any], rssi RSSI: NSNumber) {
+        let name = peripheral.name ?? ""
+        let services = (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID]) ?? []
+        let hasG2Service = services.contains(CBUUID(string: "00002760-08c2-11e1-9073-0e8ac72e0000"))
+        
+        DispatchQueue.main.async { [weak self] in
+            if !name.isEmpty && !(self?.discoveredDeviceNames.contains(name) ?? true) {
+                self?.discoveredDeviceNames.append(name)
+            }
+        }
+        
+        if hasG2Service || (!name.isEmpty && isG2Nonisolated(name: name)) {
+            log.info("G2 found (advertising): \(name) RSSI=\(RSSI)")
+            DispatchQueue.main.async { [weak self] in
+                self?.connectToFoundGlasses(peripheral: peripheral, name: name)
+            }
+        }
+    }
+    
+    private nonisolated func isG2Nonisolated(name: String) -> Bool {
+        let lower = name.lowercased()
+        return lower.hasPrefix("even g2") ||
+               lower.hasPrefix("even_g2") ||
+               lower.hasPrefix("pair_") ||
+               lower.hasPrefix("even ") ||
+               lower.contains("g2") ||
+               lower.contains("even")
     }
 }

@@ -66,14 +66,38 @@ class G2BLEManager: NSObject {
     // MARK: - Public API
 
     /// Scan, connect, authenticate. Returns when fully connected or throws on failure.
+    /// Connect using a pre-discovered peripheral (skips scanning entirely)
+    func connectToPeripheral(_ peripheral: CBPeripheral) async throws {
+        log.info("Connecting to pre-found peripheral: '\(peripheral.name ?? "?")'")
+        self.peripheral = peripheral
+        peripheral.delegate = self
+        state = .connecting
+        
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            self.connectContinuation = continuation
+            self.centralManager.connect(peripheral, options: nil)
+        }
+    }
+    
     func connectToGlasses() async throws {
-        if centralManager.state != .poweredOn {
-            // Wait for BLE to power on
-            try await Task.sleep(nanoseconds: 1_000_000_000)
-            guard centralManager.state == .poweredOn else {
-                state = .error("Bluetooth is not available")
-                throw G2Error.bleUnavailable
+        // Wait up to 5 seconds for BLE to power on
+        var waitAttempts = 0
+        while centralManager.state != .poweredOn && waitAttempts < 50 {
+            try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+            waitAttempts += 1
+        }
+        log.info("BLE state after wait: \(self.centralManager.state.rawValue) (waited \(waitAttempts * 100)ms)")
+        guard centralManager.state == .poweredOn else {
+            let stateDesc: String
+            switch centralManager.state {
+            case .unauthorized: stateDesc = "Bluetooth permission denied — check Settings"
+            case .poweredOff: stateDesc = "Bluetooth is turned off"
+            case .unsupported: stateDesc = "This device doesn't support BLE"
+            default: stateDesc = "Bluetooth unavailable (state: \(self.centralManager.state.rawValue))"
             }
+            state = .error(stateDesc)
+            log.error("BLE not available: \(stateDesc)")
+            throw G2Error.bleUnavailable
         }
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -94,10 +118,12 @@ class G2BLEManager: NSObject {
             for svcUUID in commonBLEServices {
                 let connected = self.centralManager.retrieveConnectedPeripherals(withServices: [svcUUID])
                 for p in connected {
-                    if let name = p.name, G2Constants.isG2Device(name: name) {
-                        log.info("Found already-connected G2 via service \(svcUUID): \(name)")
-                        self.delegate?.bleManager(self, didDiscoverDevice: name, rssi: NSNumber(value: 0))
-                        if G2Constants.isLeftEar(name: name) || self.peripheral == nil {
+                    let pName = p.name ?? "G2"
+                    log.info("Found connected peripheral via \(svcUUID): '\(pName)'")
+                    // Accept any peripheral found via G2 service UUID, or matching name
+                    if svcUUID == G2Constants.serviceUUID || G2Constants.isG2Device(name: pName) || pName.lowercased().contains("pair") || pName.lowercased().contains("even") {
+                        self.delegate?.bleManager(self, didDiscoverDevice: pName, rssi: NSNumber(value: 0))
+                        if self.peripheral == nil {
                             self.peripheral = p
                             p.delegate = self
                             self.state = .connecting
@@ -110,17 +136,38 @@ class G2BLEManager: NSObject {
                 if foundConnected { return }
             }
             
+            // Also try retrieving ALL connected peripherals and log them
+            let allConnected = self.centralManager.retrieveConnectedPeripherals(withServices: [CBUUID(string: "180A")])
+            log.info("All connected peripherals (Device Info service): \(allConnected.map { $0.name ?? "?" })")
+            for p in allConnected {
+                let pName = p.name ?? ""
+                log.info("  Connected peripheral: '\(pName)'")
+                if !pName.isEmpty && !foundConnected {
+                    // Try connecting to any named peripheral
+                    if G2Constants.isG2Device(name: pName) || pName.lowercased().contains("pair") || pName.lowercased().contains("even") {
+                        log.info("  -> Looks like G2! Connecting...")
+                        self.peripheral = p
+                        p.delegate = self
+                        self.state = .connecting
+                        p.discoverServices(nil)
+                        foundConnected = true
+                    }
+                }
+            }
+            if foundConnected { return }
+
             // Fallback: scan for advertising G2 devices
             log.info("Scanning for Even G2 glasses...")
+            // Scan for G2 service UUID AND scan all (some G2s don't advertise the custom service)
             self.centralManager.scanForPeripherals(
-                withServices: nil, // Scan all — filter by name
+                withServices: nil,
                 options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
             )
         }
 
         // Start scan timeout
         scanTimeoutTask = Task {
-            try? await Task.sleep(nanoseconds: 15_000_000_000) // 15s
+            try? await Task.sleep(nanoseconds: 30_000_000_000) // 30s
             if case .scanning = self.state {
                 self.centralManager.stopScan()
                 self.state = .error("No G2 glasses found")
@@ -215,7 +262,19 @@ extension G2BLEManager: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                          advertisementData: [String: Any], rssi RSSI: NSNumber) {
-        guard let name = peripheral.name, G2Constants.isG2Device(name: name) else { return }
+        let name = peripheral.name ?? ""
+        let advertisedServices = advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] ?? []
+        let hasG2Service = advertisedServices.contains(G2Constants.serviceUUID)
+        
+        // Accept if: has G2 service UUID, OR name matches known G2 patterns
+        let nameMatch = !name.isEmpty && (
+            G2Constants.isG2Device(name: name) ||
+            name.lowercased().contains("even") ||
+            name.lowercased().contains("pair")
+        )
+        
+        guard hasG2Service || nameMatch else { return }
+        log.info("G2 candidate found: '\(name)' service=\(hasG2Service) RSSI=\(RSSI)")
 
         // Prefer left ear (primary connection)
         if !G2Constants.isLeftEar(name: name), self.peripheral == nil {

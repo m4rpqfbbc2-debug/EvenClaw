@@ -67,7 +67,12 @@ enum G2Constants {
 
     /// G2 advertises as "Even G2_XX_L_YYYYYY" or "Even G2_XX_R_YYYYYY"
     static func isG2Device(name: String) -> Bool {
-        name.hasPrefix("Even G2")
+        let lower = name.lowercased()
+        return lower.hasPrefix("even g2") ||
+               lower.hasPrefix("even_g2") ||
+               lower.hasPrefix("pair_") ||
+               lower.hasPrefix("even ") ||
+               lower.contains("g2")
     }
 
     static func isLeftEar(name: String) -> Bool {
