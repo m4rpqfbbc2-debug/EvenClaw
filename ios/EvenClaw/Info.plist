@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>EvenClaw</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>ai.xgx.evenclaw</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string></string>
+		<key>UIImageName</key>
+		<string></string>
+	</dict>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>armv7</string>
+		<string>bluetooth-le</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>bluetooth-central</string>
+	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>EvenClaw needs microphone access to record voice messages for AI transcription.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>EvenClaw uses speech recognition to transcribe your voice into text for AI processing.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>EvenClaw connects to your Even Realities G2 smart glasses via Bluetooth.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>EvenClaw connects to your Even Realities G2 smart glasses via Bluetooth.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>EvenClaw connects to your local OpenClaw server for AI processing.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_http._tcp</string>
+	</array>
+</dict>
+</plist>

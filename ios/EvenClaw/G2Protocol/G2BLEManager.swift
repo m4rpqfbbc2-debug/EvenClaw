@@ -439,4 +439,22 @@ struct ConversateParser {
     }
 }
 
-// G2Error is defined in G2ConnectionManager.swift
+// MARK: - Errors
+
+enum G2Error: LocalizedError {
+    case bleUnavailable
+    case deviceNotFound
+    case connectionFailed(String)
+    case notConnected
+    case authFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .bleUnavailable: return "Bluetooth LE is not available"
+        case .deviceNotFound: return "No Even G2 glasses found nearby"
+        case .connectionFailed(let msg): return "Connection failed: \(msg)"
+        case .notConnected: return "Even G2 glasses not connected"
+        case .authFailed: return "Authentication handshake failed"
+        }
+    }
+}

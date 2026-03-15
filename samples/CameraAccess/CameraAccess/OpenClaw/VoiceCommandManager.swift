@@ -2,15 +2,22 @@
 // Copyright 2026 XGX.ai. All rights reserved.
 //
 // VoiceCommandManager.swift
-// Simple pipeline: Mic → Speech Recognition → OpenClaw → HUD
+// Phase 2: Gesture-driven pipeline. Mic only activates via state machine.
+// No wake word by default, no silence-based auto-send.
+// Double-tap (forceSend) is the only send trigger.
 
 import Foundation
 import Speech
 import AVFoundation
+import CoreMotion
 
+// Legacy state enum for backwards compat with EvenClawController
 enum AssistantState: Equatable {
     case idle
     case listening
+    case waitingForTouchBar
+    case recordingFromG2
+    case processing
     case sending
     case error(String)
 }
@@ -20,17 +27,37 @@ class VoiceCommandManager: ObservableObject {
 
     // MARK: - Published State
 
-    @Published var state: AssistantState = .idle
-    @Published var openClawConnected = false
-    @Published var glassesConnected = false
+    @Published var state: AssistantState = .idle {
+        didSet { onStateChange?(state) }
+    }
+    @Published var isRecording = false
     @Published var liveText = ""
     @Published var responseText = ""
     @Published var debugStatus = ""
+    @Published var openClawConnected = false
+    @Published var glassesConnected = false
+    @Published var audioLevelHistory: [Float] = Array(repeating: 0, count: 30)
+    @Published var wakeWordActive = false
+    @Published var headGestureActive = false
 
     // MARK: - Dependencies
 
     let openClawBridge = OpenClawBridge()
     let glassesProvider: GlassesProvider
+    weak var bleManager: G2BLEManager?
+    // HeadGestureDetector removed from primary flow (Phase 2)
+    // Stub properties for backwards compat with EvenClawController
+    var headGestureDetectorIsActive: Bool { false }
+    var headGestureDetectorSource: String { "none" }
+
+    /// Called whenever state changes — used by EvenClawController for UI sync
+    var onStateChange: ((AssistantState) -> Void)?
+
+    /// Callback to display text on HUD — set by G2Sniffer
+    var onHUDDisplay: ((String) async -> Void)?
+
+    /// Callback when recording is force-sent (double-tap)
+    var onRecordingComplete: ((String) -> Void)?
 
     // MARK: - Speech Recognition
 
@@ -42,12 +69,6 @@ class VoiceCommandManager: ObservableObject {
 
     private let audioEngine = AVAudioEngine()
 
-    // MARK: - Silence Detection
-
-    private var silenceTimer: Timer?
-    private var lastTranscriptionTime: Date?
-    private let silenceThreshold: TimeInterval = 2.0 // seconds of silence before auto-send
-
     // MARK: - Init
 
     init(glassesProvider: GlassesProvider) {
@@ -57,14 +78,22 @@ class VoiceCommandManager: ObservableObject {
     // MARK: - Setup
 
     func setup() async {
+        NSLog("[VCM] setup() STARTED")
+
         // Request speech permission
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            SFSpeechRecognizer.requestAuthorization { _ in cont.resume() }
+            SFSpeechRecognizer.requestAuthorization { status in
+                NSLog("[VCM] Speech auth result: \(status.rawValue)")
+                cont.resume()
+            }
         }
 
         // Request mic permission
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            AVAudioSession.sharedInstance().requestRecordPermission { _ in cont.resume() }
+            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                NSLog("[VCM] Mic permission: \(granted)")
+                cont.resume()
+            }
         }
 
         // Setup audio session
@@ -86,43 +115,30 @@ class VoiceCommandManager: ObservableObject {
             debugStatus = "OpenClaw ❌ \(msg)"
         }
 
-        // Connect glasses
-        debugStatus += "\nScanning for G2..."
-        do {
-            try await glassesProvider.connect()
-            glassesConnected = glassesProvider.connectionState == .connected
-            debugStatus += "\nGlasses ✅"
-        } catch {
-            debugStatus += "\nGlasses ❌ \(error.localizedDescription)"
-        }
+        // Glasses connection is handled by G2Sniffer
+        glassesConnected = glassesProvider.connectionState == .connected
 
-        // Show ready on HUD if glasses connected
-        if glassesConnected {
-            showOnHUD("EvenClaw ready")
-        }
+        NSLog("[VCM] setup() complete — gesture-driven mode")
     }
 
-    // MARK: - Mic Toggle
+    // MARK: - Cancel / Reset
 
-    func toggleMic() {
-        switch state {
-        case .idle, .error:
-            startListening()
-        case .listening:
-            stopAndSend()
-        case .sending:
-            break // wait
-        }
+    func cancelCurrentOperation() {
+        stopAudio()
+        liveText = ""
+        responseText = ""
+        isRecording = false
+        state = .idle
+        NSLog("[VCM] Operation cancelled, reset to idle")
     }
 
-    // MARK: - Start Listening
+    // MARK: - Start Listening (called by state machine or TouchBar)
 
-    private func startListening() {
+    func startListening() {
         guard let speechRecognizer, speechRecognizer.isAvailable else {
             state = .error("Speech recognition unavailable")
             return
         }
-
         guard SFSpeechRecognizer.authorizationStatus() == .authorized else {
             state = .error("Speech permission denied")
             return
@@ -130,6 +146,7 @@ class VoiceCommandManager: ObservableObject {
 
         liveText = ""
         responseText = ""
+        isRecording = true
         state = .listening
 
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
@@ -140,6 +157,19 @@ class VoiceCommandManager: ObservableObject {
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
             self?.recognitionRequest?.append(buffer)
+            let channelData = buffer.floatChannelData?[0]
+            let frames = buffer.frameLength
+            if let data = channelData {
+                var sum: Float = 0
+                for i in 0..<Int(frames) { sum += abs(data[i]) }
+                let avg = sum / Float(frames)
+                Task { @MainActor in
+                    self?.audioLevelHistory.append(avg)
+                    if (self?.audioLevelHistory.count ?? 0) > 30 {
+                        self?.audioLevelHistory.removeFirst()
+                    }
+                }
+            }
         }
 
         do {
@@ -147,101 +177,70 @@ class VoiceCommandManager: ObservableObject {
             try audioEngine.start()
         } catch {
             state = .error("Mic failed: \(error.localizedDescription)")
+            isRecording = false
             return
         }
 
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest!) { [weak self] result, error in
             Task { @MainActor in
-                guard let self else { return }
-                guard self.state == .listening else { return }
+                guard let self, self.isRecording else { return }
 
                 if let result {
                     self.liveText = result.bestTranscription.formattedString
-                    self.lastTranscriptionTime = Date()
-
-                    // Show live text on HUD
                     self.showOnHUD(self.liveText)
-
-                    // Reset silence timer
-                    self.resetSilenceTimer()
                 }
 
                 if let error {
                     NSLog("[VCM] Recognition error: %@", error.localizedDescription)
-                    // Don't error out — partial results might have been enough
-                    if self.liveText.isEmpty {
-                        self.state = .error("No speech detected")
-                        self.stopAudio()
-                    }
                 }
             }
         }
 
-        // Start silence timer
-        resetSilenceTimer()
         showOnHUD("Listening...")
-        NSLog("[VCM] Listening started")
+        NSLog("[VCM] Listening started (gesture-driven, no auto-send)")
     }
 
-    // MARK: - Silence Detection
+    // MARK: - Stop Listening
 
-    private func resetSilenceTimer() {
-        silenceTimer?.invalidate()
-        silenceTimer = Timer.scheduledTimer(withTimeInterval: silenceThreshold, repeats: false) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, self.state == .listening, !self.liveText.isEmpty else { return }
-                self.stopAndSend()
-            }
-        }
-    }
-
-    // MARK: - Stop & Send
-
-    private func stopAndSend() {
-        guard state == .listening else { return }
-        silenceTimer?.invalidate()
+    func stopListening() {
         stopAudio()
+        isRecording = false
+        state = .idle
+        NSLog("[VCM] Listening stopped")
+    }
 
+    // MARK: - Force Send (double-tap trigger)
+
+    func forceSend() -> String {
         let text = liveText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else {
-            state = .idle
-            return
-        }
-
+        stopAudio()
+        isRecording = false
         state = .sending
-        showOnHUD("Thinking...")
-        NSLog("[VCM] Sending: %@", text)
-
-        // Animate "Thinking..." on HUD
-        var dots = 0
-        let animTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] timer in
-            Task { @MainActor in
-                guard let self, self.state == .sending else { timer.invalidate(); return }
-                dots = (dots + 1) % 4
-                self.showOnHUD("Thinking" + String(repeating: ".", count: dots + 1))
-            }
+        NSLog("[VCM] Force send: \(text.prefix(80))")
+        if !text.isEmpty {
+            onRecordingComplete?(text)
         }
+        return text
+    }
 
-        Task {
-            let (success, response) = await openClawBridge.sendMessage(text)
-            animTimer.invalidate()
+    // MARK: - Send to AI
 
-            if success {
-                responseText = response
-                showOnHUD(response)
-                NSLog("[VCM] Response: %@", String(response.prefix(200)))
+    func sendToAI(_ text: String) async -> String? {
+        state = .processing
+        showOnHUD("Thinking...")
+        NSLog("[VCM] Sending to AI: %@", String(text.prefix(80)))
 
-                // Auto-clear after 15 seconds
-                try? await Task.sleep(nanoseconds: 15_000_000_000)
-                if state == .sending {
-                    showOnHUD("EvenClaw ready")
-                }
-            } else {
-                state = .error("Failed: \(response)")
-                showOnHUD("Error")
-            }
+        let (success, response) = await openClawBridge.sendMessage(text)
 
+        if success && !response.isEmpty && response != "No response from AI." {
+            responseText = response
             state = .idle
+            NSLog("[VCM] Response: %@", String(response.prefix(200)))
+            return response
+        } else {
+            state = .error("No response")
+            NSLog("[VCM] AI error: %@", response)
+            return nil
         }
     }
 
@@ -254,11 +253,17 @@ class VoiceCommandManager: ObservableObject {
         recognitionTask?.cancel()
         recognitionRequest = nil
         recognitionTask = nil
+        audioLevelHistory = Array(repeating: 0, count: 30)
     }
 
     // MARK: - HUD Display
 
-    private func showOnHUD(_ text: String) {
+    func showOnHUD(_ text: String) {
+        NSLog("[VCM] showOnHUD: '\(text.prefix(80))'")
+        if let onHUDDisplay {
+            Task { await onHUDDisplay(text) }
+            return
+        }
         guard glassesConnected else { return }
         let style = DisplayStyle(title: "EvenClaw", priority: .normal)
         Task {
@@ -268,5 +273,34 @@ class VoiceCommandManager: ObservableObject {
                 NSLog("[VCM] HUD display failed: %@", error.localizedDescription)
             }
         }
+    }
+
+    // MARK: - TouchBar Event Handler (legacy compat)
+
+    func handleTouchBarEvent(_ subcmd: UInt8) {
+        switch subcmd {
+        case G2Constants.TouchBar.evenAIStart:
+            NSLog("[VCM] TouchBar start — beginning to listen")
+            if state != .listening {
+                showOnHUD("Aisha listening...")
+                startListening()
+            }
+        case G2Constants.TouchBar.evenAIStop:
+            NSLog("[VCM] TouchBar stop")
+            // Don't auto-send — wait for double-tap
+        default:
+            break
+        }
+    }
+
+    // MARK: - BLE Manager
+
+    func setBLEManager(_ manager: G2BLEManager) {
+        bleManager = manager
+        state = .waitingForTouchBar
+    }
+
+    func handleG2AudioData(_ data: Data) {
+        // G2 audio routing — future use
     }
 }

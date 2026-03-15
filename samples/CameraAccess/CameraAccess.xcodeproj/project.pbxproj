@@ -7,11 +7,29 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		8FD96B7F2E6F0A9800F56AB1 /* CameraAccessApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FD96B792E6F0A9800F56AB1 /* CameraAccessApp.swift */; };
+		EC10000100000001 /* EvenClawController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC10000100000002 /* EvenClawController.swift */; };
+		E6CBD4BD535536FDF11485E0 /* WhisperService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 249532E37B72E3F34553E901 /* WhisperService.swift */; };
+		059E1FD4487D3D1473D700BC /* VoiceCommandManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30F34112BB6059B0F2C363D3 /* VoiceCommandManager.swift */; };
+		1CAA3E37069C029E57983D14 /* TTSService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3014E68970A994EB1F7D0273 /* TTSService.swift */; };
+		92B097BDD912BC1E69924668 /* OpenClawBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 728BECC40FC8ABC9FEB04932 /* OpenClawBridge.swift */; };
+		54539E3A5648E71CE1EC1BAC /* AIProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02E0595F77AA34F06955725A /* AIProvider.swift */; };
+		A01F7A856BD0109C775AEB90 /* WaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98E259DD907C15DD944AAFFC /* WaveformView.swift */; };
+		CFBFE562815FDAA92DA402A8 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB8957AE290AF45CEC1585AD /* OnboardingView.swift */; };
+		454DA5512CFDDB2E03623C8B /* MatrixTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CA83AE192AB7EEA11CF3BEE /* MatrixTheme.swift */; };
+		978D5229E44AEE15AE477AEC /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90E0291151CAF1A7B6DB8DEA /* MainView.swift */; };
+		E303310B7142CADDE118CB6B /* G2ConnectionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A592C954BF3F7969F97ADCB0 /* G2ConnectionManager.swift */; };
+		857FE5F8515E219444A5E474 /* ConversationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3CDD232FC25E4E010AEC9F8 /* ConversationView.swift */; };
+		7E475A2229E5D39281381DE2 /* ConversationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAEF746209BAF0EEB8018F9F /* ConversationManager.swift */; };
+		F6E9C1C506ED3665185A4FEA /* ConversationLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3574E1B055AF87F5DA386A4 /* ConversationLogger.swift */; };
+		F200000100000001 /* GestureController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F200000100000002 /* GestureController.swift */; };
+		F100000100000001 /* AppStateMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F100000100000002 /* AppStateMachine.swift */; };
+		8FD96B7F2E6F0A9800F56AB1 /* EvenClawApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FD96B792E6F0A9800F56AB1 /* EvenClawApp.swift */; };
+		E200000100000001 /* KeychainManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E200000100000002 /* KeychainManager.swift */; };
 		14B8A32379C2419BDCFE7661 /* G2Sniffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCBACB33735061CF292FFC0A /* G2Sniffer.swift */; };
 		8FD96B8D2E6F0A9800F56AB1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8FD96B772E6F0A9800F56AB1 /* Assets.xcassets */; };
 		A1B2C3D42F0A000200000003 /* AudioManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D42F0A000100000003 /* AudioManager.swift */; };
 		9DD894B32F4047630090B9B9 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DD894B02F4047630090B9B9 /* SettingsView.swift */; };
+		E300000100000001 /* SetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E300000100000002 /* SetupView.swift */; };
 		B1000001000000010000001 /* GlassesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000001000000010000002 /* GlassesProvider.swift */; };
 		B1000002000000010000001 /* EvenG2Provider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002000000010000002 /* EvenG2Provider.swift */; };
 		B1000003000000010000001 /* NotificationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000003000000010000002 /* NotificationProvider.swift */; };
@@ -48,14 +66,32 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		249532E37B72E3F34553E901 /* WhisperService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WhisperService.swift; path = OpenClaw/WhisperService.swift; sourceTree = "<group>"; };
+		30F34112BB6059B0F2C363D3 /* VoiceCommandManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VoiceCommandManager.swift; path = OpenClaw/VoiceCommandManager.swift; sourceTree = "<group>"; };
+		3014E68970A994EB1F7D0273 /* TTSService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TTSService.swift; path = OpenClaw/TTSService.swift; sourceTree = "<group>"; };
+		728BECC40FC8ABC9FEB04932 /* OpenClawBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OpenClawBridge.swift; path = OpenClaw/OpenClawBridge.swift; sourceTree = "<group>"; };
+		02E0595F77AA34F06955725A /* AIProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AIProvider.swift; path = OpenClaw/AIProvider.swift; sourceTree = "<group>"; };
+		98E259DD907C15DD944AAFFC /* WaveformView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformView.swift; sourceTree = "<group>"; };
+		DB8957AE290AF45CEC1585AD /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		5CA83AE192AB7EEA11CF3BEE /* MatrixTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatrixTheme.swift; sourceTree = "<group>"; };
+		90E0291151CAF1A7B6DB8DEA /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
+		A592C954BF3F7969F97ADCB0 /* G2ConnectionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = G2ConnectionManager.swift; sourceTree = "<group>"; };
+		C3CDD232FC25E4E010AEC9F8 /* ConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationView.swift; sourceTree = "<group>"; };
+		FAEF746209BAF0EEB8018F9F /* ConversationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationManager.swift; sourceTree = "<group>"; };
+		D3574E1B055AF87F5DA386A4 /* ConversationLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationLogger.swift; sourceTree = "<group>"; };
+		EC10000100000002 /* EvenClawController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EvenClawController.swift; sourceTree = "<group>"; };
+		F200000100000002 /* GestureController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GestureController.swift; sourceTree = "<group>"; };
+		F100000100000002 /* AppStateMachine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateMachine.swift; sourceTree = "<group>"; };
 		3A3A3A3A3A3A3A3A3A3A3A3A /* CameraAccess.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CameraAccess.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8FD96B772E6F0A9800F56AB1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		8FD96B782E6F0A9800F56AB1 /* CameraAccess.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CameraAccess.entitlements; sourceTree = "<group>"; };
-		8FD96B792E6F0A9800F56AB1 /* CameraAccessApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraAccessApp.swift; sourceTree = "<group>"; };
+		8FD96B792E6F0A9800F56AB1 /* EvenClawApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EvenClawApp.swift; sourceTree = "<group>"; };
+		E200000100000002 /* KeychainManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainManager.swift; sourceTree = "<group>"; };
 		BCBACB33735061CF292FFC0A /* G2Sniffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = G2Sniffer.swift; sourceTree = "<group>"; };
 		8FD96B7B2E6F0A9800F56AB1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A1B2C3D42F0A000100000003 /* AudioManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioManager.swift; sourceTree = "<group>"; };
 		9DD894B02F4047630090B9B9 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		E300000100000002 /* SetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupView.swift; sourceTree = "<group>"; };
 		B1000001000000010000002 /* GlassesProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassesProvider.swift; sourceTree = "<group>"; };
 		B1000002000000010000002 /* EvenG2Provider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EvenG2Provider.swift; sourceTree = "<group>"; };
 		B1000003000000010000002 /* NotificationProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationProvider.swift; sourceTree = "<group>"; };
@@ -111,7 +147,24 @@
 				A1B2C3D42F0A000300000001 /* Gemini */,
 				8FD96B772E6F0A9800F56AB1 /* Assets.xcassets */,
 				8FD96B782E6F0A9800F56AB1 /* CameraAccess.entitlements */,
-				8FD96B792E6F0A9800F56AB1 /* CameraAccessApp.swift */,
+				8FD96B792E6F0A9800F56AB1 /* EvenClawApp.swift */,
+				249532E37B72E3F34553E901 /* WhisperService.swift */,
+				30F34112BB6059B0F2C363D3 /* VoiceCommandManager.swift */,
+				3014E68970A994EB1F7D0273 /* TTSService.swift */,
+				728BECC40FC8ABC9FEB04932 /* OpenClawBridge.swift */,
+				02E0595F77AA34F06955725A /* AIProvider.swift */,
+				98E259DD907C15DD944AAFFC /* WaveformView.swift */,
+				DB8957AE290AF45CEC1585AD /* OnboardingView.swift */,
+				5CA83AE192AB7EEA11CF3BEE /* MatrixTheme.swift */,
+				90E0291151CAF1A7B6DB8DEA /* MainView.swift */,
+				A592C954BF3F7969F97ADCB0 /* G2ConnectionManager.swift */,
+				C3CDD232FC25E4E010AEC9F8 /* ConversationView.swift */,
+				FAEF746209BAF0EEB8018F9F /* ConversationManager.swift */,
+				D3574E1B055AF87F5DA386A4 /* ConversationLogger.swift */,
+				EC10000100000002 /* EvenClawController.swift */,
+				F200000100000002 /* GestureController.swift */,
+				F100000100000002 /* AppStateMachine.swift */,
+				E200000100000002 /* KeychainManager.swift */,
 				BCBACB33735061CF292FFC0A /* G2Sniffer.swift */,
 				C100000100000002 /* EvenClawConfig.swift */,
 				8FD96B7B2E6F0A9800F56AB1 /* Info.plist */,
@@ -124,6 +177,7 @@
 			isa = PBXGroup;
 			children = (
 				9DD894B02F4047630090B9B9 /* SettingsView.swift */,
+				E300000100000002 /* SetupView.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -266,11 +320,29 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E6CBD4BD535536FDF11485E0 /* WhisperService.swift in Sources */,
+				059E1FD4487D3D1473D700BC /* VoiceCommandManager.swift in Sources */,
+				1CAA3E37069C029E57983D14 /* TTSService.swift in Sources */,
+				92B097BDD912BC1E69924668 /* OpenClawBridge.swift in Sources */,
+				54539E3A5648E71CE1EC1BAC /* AIProvider.swift in Sources */,
+				A01F7A856BD0109C775AEB90 /* WaveformView.swift in Sources */,
+				CFBFE562815FDAA92DA402A8 /* OnboardingView.swift in Sources */,
+				454DA5512CFDDB2E03623C8B /* MatrixTheme.swift in Sources */,
+				978D5229E44AEE15AE477AEC /* MainView.swift in Sources */,
+				E303310B7142CADDE118CB6B /* G2ConnectionManager.swift in Sources */,
+				857FE5F8515E219444A5E474 /* ConversationView.swift in Sources */,
+				7E475A2229E5D39281381DE2 /* ConversationManager.swift in Sources */,
+				F6E9C1C506ED3665185A4FEA /* ConversationLogger.swift in Sources */,
+				EC10000100000001 /* EvenClawController.swift in Sources */,
+				F200000100000001 /* GestureController.swift in Sources */,
+				F100000100000001 /* AppStateMachine.swift in Sources */,
 14B8A32379C2419BDCFE7661 /* G2Sniffer.swift in Sources */,
-								8FD96B7F2E6F0A9800F56AB1 /* CameraAccessApp.swift in Sources */,
+								8FD96B7F2E6F0A9800F56AB1 /* EvenClawApp.swift in Sources */,
+				E200000100000001 /* KeychainManager.swift in Sources */,
 				C100000100000001 /* EvenClawConfig.swift in Sources */,
 				A1B2C3D42F0A000200000003 /* AudioManager.swift in Sources */,
 				9DD894B32F4047630090B9B9 /* SettingsView.swift in Sources */,
+				E300000100000001 /* SetupView.swift in Sources */,
 				B1000001000000010000001 /* GlassesProvider.swift in Sources */,
 				B1000002000000010000001 /* EvenG2Provider.swift in Sources */,
 				B1000003000000010000001 /* NotificationProvider.swift in Sources */,
@@ -321,7 +393,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 2.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.xgx.evenclaw;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.xgx.evenclaw;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;
@@ -349,7 +421,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 2.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.xgx.evenclaw;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.xgx.evenclaw;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;
@@ -371,7 +443,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MARKETING_VERSION = 2.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.xgx.evenclaw.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.xgx.evenclaw.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -400,7 +472,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MARKETING_VERSION = 2.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.xgx.evenclaw.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.xgx.evenclaw.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";

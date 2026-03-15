@@ -63,21 +63,6 @@ enum G2Constants {
     static let displayWidth: UInt32 = 267
     static let viewportHeight: UInt32 = 1294
 
-    // MARK: - Microphone Commands
-
-    /// Microphone enable/disable command
-    static let micCommand: UInt8 = 0x0E
-
-    // MARK: - TouchBar Commands (0xF5 subcmds)
-
-    enum TouchBar {
-        static let command: UInt8 = 0xF5
-        static let exitDashboard: UInt8 = 0x00
-        static let pageUpDown: UInt8 = 0x01
-        static let evenAIStart: UInt8 = 0x17   // Long press left TouchBar - start mic
-        static let evenAIStop: UInt8 = 0x18    // Release left TouchBar - stop mic
-    }
-
     // MARK: - Device Name Pattern
 
     /// G2 advertises as "Even G2_XX_L_YYYYYY" or "Even G2_XX_R_YYYYYY"
